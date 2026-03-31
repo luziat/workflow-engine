@@ -16,10 +16,13 @@ public class TaskNodeExecutor implements NodeExecutor {
 
     @Override
     public NodeResult execute(NodeExecutionContext context) {
-        String taskName = String.valueOf(context.node().getParams().getOrDefault("name", context.node().getId()));
+        String taskName = context.node().getName();
+        if (taskName == null || taskName.isBlank()) {
+            taskName = String.valueOf(context.node().getParams().getOrDefault("name", context.node().getNodeId()));
+        }
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("lastTask", taskName);
-        output.put("handledBy", context.node().getId());
+        output.put("handledBy", context.node().getNodeId());
         return NodeResult.next(output);
     }
 }

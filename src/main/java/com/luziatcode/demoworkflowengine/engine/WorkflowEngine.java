@@ -11,8 +11,6 @@ import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -34,70 +32,79 @@ public class WorkflowEngine {
     }
 
     public WorkflowExecution run(WorkflowDefinition definition, WorkflowExecution execution) {
-        Node current = execution.getCurrentNodeId() == null
-                ? findStartNode(definition)
-                : findNode(definition, execution.getCurrentNodeId());
+        NodeExecution nodeExecution = null;
+        try {
+            Node current = execution.getCurrentNodeId() == null
+                    ? findStartNode(definition)
+                    : findNode(definition, execution.getCurrentNodeId());
 
-        execution.setStatus(ExecutionStatus.RUNNING);
-        workflowExecutionService.update(execution);
-
-        while (current != null) {
-            execution.setCurrentNodeId(current.getId());
+            execution.setStatus(ExecutionStatus.RUNNING);
             workflowExecutionService.update(execution);
 
-            NodeExecution nodeExecution = beginNodeExecution(execution, current);
-            NodeResult result;
-            try {
-                result = registry.getRequired(current.getType())
+            while (current != null) {
+                execution.setCurrentNodeId(current.getNodeId());
+                workflowExecutionService.update(execution);
+
+                nodeExecution = beginNodeExecution(execution, current);
+                NodeResult result = registry.getRequired(current.getType())
                         .execute(new NodeExecutionContext(definition, execution, current));
-            } catch (Exception exception) {
+
+                execution.getContext().putAll(result.getOutput());
+                nodeExecution.setOutput(result.getOutput());
+                nodeExecution.setEndedAt(Instant.now());
+
+                if (result.getDirective() == ExecutionDirective.WAIT) {
+                    nodeExecution.setStatus(ExecutionStatus.WAITING);
+                    nodeExecution.setMessage(result.getMessage());
+                    nodeExecutionRepository.save(nodeExecution);
+                    nodeExecution = null;
+
+                    execution.setStatus(ExecutionStatus.WAITING);
+                    execution.setWaitingNodeId(current.getNodeId());
+                    return workflowExecutionService.update(execution);
+                }
+
+                if (result.getDirective() == ExecutionDirective.FINISH) {
+                    nodeExecution.setStatus(ExecutionStatus.SUCCESS);
+                    nodeExecutionRepository.save(nodeExecution);
+                    nodeExecution = null;
+
+                    execution.setStatus(ExecutionStatus.SUCCESS);
+                    execution.setCurrentNodeId(null);
+                    execution.setWaitingNodeId(null);
+                    return workflowExecutionService.update(execution);
+                }
+
+                Node next = resolveNextNode(definition, current, execution.getContext());
+                nodeExecution.setStatus(ExecutionStatus.SUCCESS);
+                nodeExecutionRepository.save(nodeExecution);
+                nodeExecution = null;
+                current = next;
+            }
+
+            execution.setStatus(ExecutionStatus.SUCCESS);
+            execution.setCurrentNodeId(null);
+            execution.setWaitingNodeId(null);
+            return workflowExecutionService.update(execution);
+        } catch (Exception exception) {
+            if (nodeExecution != null) {
                 nodeExecution.setStatus(ExecutionStatus.FAILED);
                 nodeExecution.setEndedAt(Instant.now());
                 nodeExecution.setMessage(exception.getMessage());
                 nodeExecutionRepository.save(nodeExecution);
-
-                execution.setStatus(ExecutionStatus.FAILED);
-                execution.setFailureMessage(exception.getMessage());
-                return workflowExecutionService.update(execution);
             }
 
-            execution.getContext().putAll(result.getOutput());
-            nodeExecution.setOutput(result.getOutput());
-            nodeExecution.setEndedAt(Instant.now());
-
-            if (result.getDirective() == ExecutionDirective.WAIT) {
-                nodeExecution.setStatus(ExecutionStatus.WAITING);
-                nodeExecution.setMessage(result.getMessage());
-                nodeExecutionRepository.save(nodeExecution);
-
-                execution.setStatus(ExecutionStatus.WAITING);
-                execution.setWaitingNodeId(current.getId());
-                return workflowExecutionService.update(execution);
-            }
-
-            nodeExecution.setStatus(ExecutionStatus.SUCCESS);
-            nodeExecutionRepository.save(nodeExecution);
-
-            if (result.getDirective() == ExecutionDirective.FINISH) {
-                execution.setStatus(ExecutionStatus.SUCCESS);
-                execution.setCurrentNodeId(null);
-                execution.setWaitingNodeId(null);
-                return workflowExecutionService.update(execution);
-            }
-
-            current = resolveNextNode(definition, current, execution.getContext());
+            execution.setStatus(ExecutionStatus.FAILED);
+            execution.setFailureMessage(exception.getMessage());
+            execution.setWaitingNodeId(null);
+            return workflowExecutionService.update(execution);
         }
-
-        execution.setStatus(ExecutionStatus.SUCCESS);
-        execution.setCurrentNodeId(null);
-        execution.setWaitingNodeId(null);
-        return workflowExecutionService.update(execution);
     }
 
     private NodeExecution beginNodeExecution(WorkflowExecution execution, Node current) {
         NodeExecution nodeExecution = new NodeExecution();
         nodeExecution.setExecutionId(execution.getExecutionId());
-        nodeExecution.setNodeId(current.getId());
+        nodeExecution.setNodeId(current.getNodeId());
         nodeExecution.setStatus(ExecutionStatus.RUNNING);
         nodeExecution.setStartedAt(Instant.now());
         nodeExecution.setInput(Map.copyOf(execution.getContext()));
@@ -113,34 +120,43 @@ public class WorkflowEngine {
 
     private Node findNode(WorkflowDefinition definition, String nodeId) {
         return definition.getNodes().stream()
-                .filter(node -> node.getId().equals(nodeId))
+                .filter(node -> node.getNodeId().equals(nodeId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
     }
 
     private Node resolveNextNode(WorkflowDefinition definition, Node current, Map<String, Object> context) {
         List<Edge> outgoingEdges = definition.getEdges().stream()
-                .filter(edge -> edge.getFrom().equals(current.getId()))
-                .sorted(Comparator.comparing(edge -> edge.getCondition() == null ? 1 : 0))
+                .filter(edge -> edge.getFrom().equals(current.getNodeId()))
                 .toList();
 
         if (outgoingEdges.isEmpty()) {
             return null;
         }
 
-        List<Edge> candidates = new ArrayList<>();
-        for (Edge edge : outgoingEdges) {
-            if (conditionEvaluator.matches(edge.getCondition(), context)) {
-                candidates.add(edge);
-            }
-        }
+        List<Edge> conditionalEdges = outgoingEdges.stream()
+                .filter(edge -> edge.getCondition() != null && !edge.getCondition().isBlank())
+                .toList();
+        List<Edge> defaultEdges = outgoingEdges.stream()
+                .filter(edge -> edge.getCondition() == null || edge.getCondition().isBlank())
+                .toList();
 
-        if (candidates.isEmpty()) {
+        List<Edge> matchedConditionalEdges = conditionalEdges.stream()
+                .filter(edge -> conditionEvaluator.matches(edge.getCondition(), context))
+                .toList();
+
+        if (matchedConditionalEdges.size() > 1) {
+            throw new IllegalStateException("Multiple edges matched from node: " + current.getNodeId());
+        }
+        if (matchedConditionalEdges.size() == 1) {
+            return findNode(definition, matchedConditionalEdges.getFirst().getTo());
+        }
+        if (defaultEdges.isEmpty()) {
             return null;
         }
-        if (candidates.size() > 1) {
-            throw new IllegalStateException("Multiple edges matched from node: " + current.getId());
+        if (defaultEdges.size() > 1) {
+            throw new IllegalStateException("Multiple default edges configured from node: " + current.getNodeId());
         }
-        return findNode(definition, candidates.getFirst().getTo());
+        return findNode(definition, defaultEdges.getFirst().getTo());
     }
 }

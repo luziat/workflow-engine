@@ -1,19 +1,32 @@
 package com.luziatcode.demoworkflowengine.domain;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class Node {
-    private String id;
+    private String nodeId;
+    private String name;
     private String type;
     private Map<String, Object> params = new LinkedHashMap<>();
 
-    public String getId() {
-        return id;
+    public String getNodeId() {
+        return nodeId;
     }
 
-    public void setId(String id) {
-        this.id = id;
+    @JsonAlias("id")
+    public void setNodeId(String nodeId) {
+        this.nodeId = nodeId;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    @JsonAlias("nodeName")
+    public void setName(String name) {
+        this.name = name;
     }
 
     public String getType() {

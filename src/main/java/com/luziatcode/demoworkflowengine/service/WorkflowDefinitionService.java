@@ -45,8 +45,11 @@ public class WorkflowDefinitionService {
         }
         Set<String> nodeIds = new HashSet<>();
         for (Node node : definition.getNodes()) {
-            if (!nodeIds.add(node.getId())) {
-                throw new IllegalArgumentException("Duplicate node id: " + node.getId());
+            if (node.getNodeId() == null || node.getNodeId().isBlank()) {
+                throw new IllegalArgumentException("Node id is required");
+            }
+            if (!nodeIds.add(node.getNodeId())) {
+                throw new IllegalArgumentException("Duplicate node id: " + node.getNodeId());
             }
         }
         for (Edge edge : definition.getEdges()) {
@@ -66,44 +69,51 @@ public class WorkflowDefinitionService {
         definition.setVersion(1);
 
         Node start = new Node();
-        start.setId("start");
+        start.setNodeId("start");
+        start.setName("Start");
         start.setType("start");
 
         Node http = new Node();
-        http.setId("a");
+        http.setNodeId("a");
+        http.setName("Fetch API");
         http.setType("http");
         http.setParams(Map.of("url", "https://example.org/api"));
 
         Node branch = new Node();
-        branch.setId("b");
+        branch.setNodeId("b");
+        branch.setName("Branch");
         branch.setType("switch");
 
         Node c1 = new Node();
-        c1.setId("c1");
+        c1.setNodeId("c1");
+        c1.setName("Positive Branch");
         c1.setType("task");
-        c1.setParams(Map.of("name", "positive-branch"));
 
         Node c2 = new Node();
-        c2.setId("c2");
+        c2.setNodeId("c2");
+        c2.setName("Negative Branch");
         c2.setType("task");
-        c2.setParams(Map.of("name", "negative-branch"));
 
         definition.setNodes(java.util.List.of(start, http, branch, c1, c2));
 
         Edge e1 = new Edge();
+        e1.setEdgeId("e1");
         e1.setFrom("start");
         e1.setTo("a");
 
         Edge e2 = new Edge();
+        e2.setEdgeId("e2");
         e2.setFrom("a");
         e2.setTo("b");
 
         Edge e3 = new Edge();
+        e3.setEdgeId("e3");
         e3.setFrom("b");
         e3.setTo("c1");
         e3.setCondition("x > 0");
 
         Edge e4 = new Edge();
+        e4.setEdgeId("e4");
         e4.setFrom("b");
         e4.setTo("c2");
         e4.setCondition("x <= 0");

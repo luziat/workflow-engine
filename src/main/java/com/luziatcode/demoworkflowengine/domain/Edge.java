@@ -1,9 +1,21 @@
 package com.luziatcode.demoworkflowengine.domain;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 public class Edge {
+    private String edgeId;
     private String from;
     private String to;
     private String condition;
+
+    public String getEdgeId() {
+        return edgeId;
+    }
+
+    @JsonAlias("id")
+    public void setEdgeId(String edgeId) {
+        this.edgeId = edgeId;
+    }
 
     public String getFrom() {
         return from;
