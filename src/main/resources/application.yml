@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: demo-workflow-engine
+server:
+  port: 8080
