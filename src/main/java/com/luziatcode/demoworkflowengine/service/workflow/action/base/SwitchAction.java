@@ -1,17 +1,18 @@
-package com.luziatcode.demoworkflowengine.service.workflow.task.basic;
+package com.luziatcode.demoworkflowengine.service.workflow.action.base;
 
+import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutionContext;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeResult;
-import com.luziatcode.demoworkflowengine.service.workflow.task.NodeTask;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
 @Component
-public class SwitchNodeTask implements NodeTask {
+public class SwitchAction implements Action {
     @Override
-    public String getType() {
-        return "switch";
+    public ActionType getType() {
+        return ActionType.SWITCH;
     }
 
     @Override

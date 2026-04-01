@@ -4,6 +4,7 @@ import com.luziatcode.demoworkflowengine.service.workflow.domain.ExecutionStatus
 import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -12,12 +13,9 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class WorkflowExecutionService {
     private final WorkflowExecutionRepository repository;
-
-    public WorkflowExecutionService(WorkflowExecutionRepository repository) {
-        this.repository = repository;
-    }
 
     public WorkflowExecution create(WorkflowDefinition definition, Map<String, Object> input) {
         WorkflowExecution execution = new WorkflowExecution();

@@ -2,6 +2,7 @@ package com.luziatcode.demoworkflowengine.service;
 
 import com.luziatcode.demoworkflowengine.service.workflow.domain.Edge;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
         definition.setVersion(1);
-        definition.setNodes(List.of(node("start", "Start", "start"), node("start", "Duplicate", "task")));
+        definition.setNodes(List.of(node("start", "Start", ActionType.START), node("start", "Duplicate", ActionType.GENERIC)));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -44,7 +45,7 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
         definition.setVersion(1);
-        definition.setNodes(List.of(node("task", "Task", "task")));
+        definition.setNodes(List.of(node("task", "Task", ActionType.GENERIC)));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -81,7 +82,7 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
         definition.setVersion(1);
-        definition.setNodes(List.of(node(" ", "Start", "start")));
+        definition.setNodes(List.of(node(" ", "Start", ActionType.START)));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -95,16 +96,16 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId(id);
         definition.setVersion(version);
-        definition.setNodes(List.of(node("start", "Start", "start"), node("task", "Task", "task")));
+        definition.setNodes(List.of(node("start", "Start", ActionType.START), node("task", "Task", ActionType.GENERIC)));
         definition.setEdges(edges);
         return definition;
     }
 
-    private static Node node(String nodeId, String name, String type) {
+    private static Node node(String nodeId, String name, ActionType type) {
         Node node = new Node();
         node.setNodeId(nodeId);
         node.setName(name);
-        node.setType(type);
+        node.setActionType(type);
         return node;
     }
 

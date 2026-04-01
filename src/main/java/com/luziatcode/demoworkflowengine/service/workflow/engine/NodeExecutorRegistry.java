@@ -1,6 +1,8 @@
 package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
-import com.luziatcode.demoworkflowengine.service.workflow.task.NodeTask;
+import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -9,16 +11,16 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Component
+@RequiredArgsConstructor
 public class NodeExecutorRegistry {
-    private final Map<String, NodeTask> executors;
+    private final List<Action> actions;
+    private Map<ActionType, Action> executors;
 
-    public NodeExecutorRegistry(List<NodeTask> executors) {
-        this.executors = executors.stream()
-                .collect(Collectors.toMap(NodeTask::getType, Function.identity()));
-    }
-
-    public NodeTask getRequired(String type) {
-        NodeTask executor = executors.get(type);
+    public Action getRequired(ActionType type) {
+        if (executors == null) {
+            executors = actions.stream().collect(Collectors.toMap(Action::getType, Function.identity()));
+        }
+        Action executor = executors.get(type);
         if (executor == null) {
             throw new IllegalArgumentException("Unsupported node type: " + type);
         }

@@ -1,18 +1,19 @@
-package com.luziatcode.demoworkflowengine.service.workflow.task.custom;
+package com.luziatcode.demoworkflowengine.service.workflow.action.custom;
 
+import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutionContext;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeResult;
-import com.luziatcode.demoworkflowengine.service.workflow.task.NodeTask;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
-public class TaskNodeTask implements NodeTask {
+public class GenericAction implements Action {
     @Override
-    public String getType() {
-        return "task";
+    public ActionType getType() {
+        return ActionType.GENERIC;
     }
 
     @Override

@@ -1,8 +1,11 @@
 package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
+import lombok.Getter;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@Getter
 public class NodeResult {
     private final ExecutionDirective directive;
     private final Map<String, Object> output;
@@ -18,23 +21,7 @@ public class NodeResult {
         return new NodeResult(ExecutionDirective.NEXT, output, null);
     }
 
-    public static NodeResult waitForSignal(String message) {
-        return new NodeResult(ExecutionDirective.WAIT, Map.of(), message);
-    }
-
     public static NodeResult finish(Map<String, Object> output) {
         return new NodeResult(ExecutionDirective.FINISH, output, null);
-    }
-
-    public ExecutionDirective getDirective() {
-        return directive;
-    }
-
-    public Map<String, Object> getOutput() {
-        return output;
-    }
-
-    public String getMessage() {
-        return message;
     }
 }

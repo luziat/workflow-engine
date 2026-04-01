@@ -1,10 +1,9 @@
 package com.luziatcode.demoworkflowengine.service.workflow.domain;
 
-public enum ExecutorType {
+public enum ActionType {
     START,
     SWITCH,
-    WAIT,
     TIMER,
-    TASK,
+    GENERIC,
     HTTP
 }

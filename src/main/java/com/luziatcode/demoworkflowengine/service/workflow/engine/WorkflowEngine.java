@@ -1,13 +1,9 @@
 package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.Edge;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.ExecutionStatus;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeExecution;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.*;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -15,21 +11,12 @@ import java.util.List;
 import java.util.Map;
 
 @Component
+@RequiredArgsConstructor
 public class WorkflowEngine {
     private final NodeExecutorRegistry registry;
     private final WorkflowExecutionService workflowExecutionService;
     private final NodeExecutionRepository nodeExecutionRepository;
     private final SimpleConditionEvaluator conditionEvaluator;
-
-    public WorkflowEngine(NodeExecutorRegistry registry,
-                          WorkflowExecutionService workflowExecutionService,
-                          NodeExecutionRepository nodeExecutionRepository,
-                          SimpleConditionEvaluator conditionEvaluator) {
-        this.registry = registry;
-        this.workflowExecutionService = workflowExecutionService;
-        this.nodeExecutionRepository = nodeExecutionRepository;
-        this.conditionEvaluator = conditionEvaluator;
-    }
 
     public WorkflowExecution run(WorkflowDefinition definition, WorkflowExecution execution) {
         NodeExecution nodeExecution = null;
@@ -46,23 +33,12 @@ public class WorkflowEngine {
                 workflowExecutionService.update(execution);
 
                 nodeExecution = beginNodeExecution(execution, current);
-                NodeResult result = registry.getRequired(current.getType())
+                NodeResult result = registry.getRequired(current.getActionType())
                         .execute(new NodeExecutionContext(definition, execution, current));
 
                 execution.getContext().putAll(result.getOutput());
                 nodeExecution.setOutput(result.getOutput());
                 nodeExecution.setEndedAt(Instant.now());
-
-                if (result.getDirective() == ExecutionDirective.WAIT) {
-                    nodeExecution.setStatus(ExecutionStatus.WAITING);
-                    nodeExecution.setMessage(result.getMessage());
-                    nodeExecutionRepository.save(nodeExecution);
-                    nodeExecution = null;
-
-                    execution.setStatus(ExecutionStatus.WAITING);
-                    execution.setWaitingNodeId(current.getNodeId());
-                    return workflowExecutionService.update(execution);
-                }
 
                 if (result.getDirective() == ExecutionDirective.FINISH) {
                     nodeExecution.setStatus(ExecutionStatus.SUCCESS);
@@ -71,7 +47,6 @@ public class WorkflowEngine {
 
                     execution.setStatus(ExecutionStatus.SUCCESS);
                     execution.setCurrentNodeId(null);
-                    execution.setWaitingNodeId(null);
                     return workflowExecutionService.update(execution);
                 }
 
@@ -84,7 +59,6 @@ public class WorkflowEngine {
 
             execution.setStatus(ExecutionStatus.SUCCESS);
             execution.setCurrentNodeId(null);
-            execution.setWaitingNodeId(null);
             return workflowExecutionService.update(execution);
         } catch (Exception exception) {
             if (nodeExecution != null) {
@@ -96,7 +70,6 @@ public class WorkflowEngine {
 
             execution.setStatus(ExecutionStatus.FAILED);
             execution.setFailureMessage(exception.getMessage());
-            execution.setWaitingNodeId(null);
             return workflowExecutionService.update(execution);
         }
     }
@@ -113,7 +86,7 @@ public class WorkflowEngine {
 
     private Node findStartNode(WorkflowDefinition definition) {
         return definition.getNodes().stream()
-                .filter(node -> "start".equals(node.getType()))
+                .filter(node -> ActionType.START.equals(node.getActionType()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Start node not found"));
     }

@@ -2,15 +2,11 @@ package com.luziatcode.demoworkflowengine.engine;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.ExecutionStatus;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeExecution;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
-import com.luziatcode.demoworkflowengine.service.workflow.task.NodeTask;
-import com.luziatcode.demoworkflowengine.service.workflow.task.basic.StartNodeTask;
-import com.luziatcode.demoworkflowengine.service.workflow.task.basic.SwitchNodeTask;
-import com.luziatcode.demoworkflowengine.service.workflow.task.custom.TaskNodeTask;
-import com.luziatcode.demoworkflowengine.service.workflow.task.basic.WaitNodeTask;
+import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.*;
+import com.luziatcode.demoworkflowengine.service.workflow.action.base.StartAction;
+import com.luziatcode.demoworkflowengine.service.workflow.action.base.SwitchAction;
+import com.luziatcode.demoworkflowengine.service.workflow.action.custom.GenericAction;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
@@ -33,7 +29,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeTask(), new TaskNodeTask())),
+                new NodeExecutorRegistry(List.of(new StartAction(), new GenericAction())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -43,8 +39,8 @@ class WorkflowEngineTest {
                   "id": "send-email",
                   "version": 2,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "type": "start" },
-                    { "nodeId": "task", "name": "Send Email", "type": "task" }
+                    { "nodeId": "start", "name": "Start", "actionType": "START" },
+                    { "nodeId": "task", "name": "Send Email", "actionType": "GENERIC" }
                   ],
                   "edges": [
                     { "edgeId": "start-task", "from": "start", "to": "task" }
@@ -57,7 +53,6 @@ class WorkflowEngineTest {
 
         assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
         assertNull(result.getCurrentNodeId());
-        assertNull(result.getWaitingNodeId());
         assertEquals(true, result.getContext().get("started"));
         assertEquals("Send Email", result.getContext().get("lastTask"));
         assertEquals("task", result.getContext().get("handledBy"));
@@ -72,122 +67,13 @@ class WorkflowEngineTest {
     }
 
     @Test
-    void runStopsAtWaitNodeAndMarksExecutionWaiting() {
-        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeTask(), new WaitNodeTask())),
-                executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
-        );
-        WorkflowDefinition definition = definition("""
-                {
-                  "id": "approval-workflow",
-                  "version": 1,
-                  "nodes": [
-                    { "nodeId": "start", "name": "Start", "type": "start" },
-                    { "nodeId": "approval", "name": "Approval Wait", "type": "wait" }
-                  ],
-                  "edges": [
-                    { "edgeId": "start-approval", "from": "start", "to": "approval" }
-                  ]
-                }
-                """);
-        WorkflowExecution execution = executionService.create(definition, Map.of());
-
-        WorkflowExecution result = engine.run(definition, execution);
-
-        assertEquals(ExecutionStatus.WAITING, result.getStatus());
-        assertEquals("approval", result.getCurrentNodeId());
-        assertEquals("approval", result.getWaitingNodeId());
-
-        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
-        assertEquals(2, nodeExecutions.size());
-        NodeExecution waitExecution = nodeExecutions.get(1);
-        assertEquals(ExecutionStatus.WAITING, waitExecution.getStatus());
-        assertEquals("Waiting for external resume input", waitExecution.getMessage());
-        assertNotNull(waitExecution.getEndedAt());
-    }
-
-    @Test
-    void runResumesFromWaitingExecution() {
-        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        NodeTask resumableWaitExecutor = new NodeTask() {
-            @Override
-            public String getType() {
-                return "approval-wait";
-            }
-
-            @Override
-            public NodeResult execute(NodeExecutionContext context) {
-                if (Boolean.TRUE.equals(context.execution().getContext().get("approved"))) {
-                    return NodeResult.next(Map.of("approvedBy", "reviewer"));
-                }
-                return NodeResult.waitForSignal("Waiting for approval");
-            }
-        };
-        WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeTask(), resumableWaitExecutor, new TaskNodeTask())),
-                executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
-        );
-        WorkflowDefinition definition = definition("""
-                {
-                  "id": "resume-workflow",
-                  "version": 1,
-                  "nodes": [
-                    { "nodeId": "start", "name": "Start", "type": "start" },
-                    { "nodeId": "approval", "name": "Approval", "type": "approval-wait" },
-                    { "nodeId": "task", "name": "Send Email", "type": "task" }
-                  ],
-                  "edges": [
-                    { "edgeId": "start-approval", "from": "start", "to": "approval" },
-                    { "edgeId": "approval-task", "from": "approval", "to": "task" }
-                  ]
-                }
-                """);
-        WorkflowExecution execution = executionService.create(definition, Map.of());
-
-        WorkflowExecution waiting = engine.run(definition, execution);
-
-        assertEquals(ExecutionStatus.WAITING, waiting.getStatus());
-        assertEquals("approval", waiting.getCurrentNodeId());
-        assertEquals("approval", waiting.getWaitingNodeId());
-
-        waiting.getContext().put("approved", true);
-        waiting.setWaitingNodeId(null);
-        WorkflowExecution resumed = engine.run(definition, executionService.update(waiting));
-
-        assertEquals(ExecutionStatus.SUCCESS, resumed.getStatus());
-        assertNull(resumed.getCurrentNodeId());
-        assertNull(resumed.getWaitingNodeId());
-        assertEquals(true, resumed.getContext().get("approved"));
-        assertEquals("reviewer", resumed.getContext().get("approvedBy"));
-        assertEquals("Send Email", resumed.getContext().get("lastTask"));
-        assertEquals("task", resumed.getContext().get("handledBy"));
-
-        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(resumed.getExecutionId());
-        assertEquals(4, nodeExecutions.size());
-        assertEquals("start", nodeExecutions.get(0).getNodeId());
-        assertEquals(ExecutionStatus.WAITING, nodeExecutions.get(1).getStatus());
-        assertEquals("approval", nodeExecutions.get(1).getNodeId());
-        assertEquals("approval", nodeExecutions.get(2).getNodeId());
-        assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(2).getStatus());
-        assertEquals("task", nodeExecutions.get(3).getNodeId());
-        assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(3).getStatus());
-    }
-
-    @Test
     void runMarksExecutionFailedWhenExecutorThrows() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        NodeTask failingExecutor = new NodeTask() {
+        Action failingExecutor = new Action() {
             @Override
-            public String getType() {
-                return "fail";
+            public ActionType getType() {
+                return ActionType.GENERIC;
             }
 
             @Override
@@ -196,7 +82,7 @@ class WorkflowEngineTest {
             }
         };
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeTask(), failingExecutor)),
+                new NodeExecutorRegistry(List.of(new StartAction(), failingExecutor)),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -206,8 +92,8 @@ class WorkflowEngineTest {
                   "id": "failure-workflow",
                   "version": 1,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "type": "start" },
-                    { "nodeId": "fail-node", "name": "Failure", "type": "fail" }
+                    { "nodeId": "start", "name": "Start", "actionType": "START" },
+                    { "nodeId": "fail-node", "name": "Failure", "actionType": "GENERIC" }
                   ],
                   "edges": [
                     { "edgeId": "start-fail-node", "from": "start", "to": "fail-node" }
@@ -235,7 +121,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeTask(), new SwitchNodeTask(), new TaskNodeTask())),
+                new NodeExecutorRegistry(List.of(new StartAction(), new SwitchAction(), new GenericAction())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -245,10 +131,10 @@ class WorkflowEngineTest {
                   "id": "branching-workflow",
                   "version": 3,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "type": "start" },
-                    { "nodeId": "decision", "name": "Decision", "type": "switch" },
-                    { "nodeId": "task-a", "name": "Branch A", "type": "task" },
-                    { "nodeId": "task-b", "name": "Branch B", "type": "task" }
+                    { "nodeId": "start", "name": "Start", "actionType": "START" },
+                    { "nodeId": "decision", "name": "Decision", "actionType": "SWITCH" },
+                    { "nodeId": "task-a", "name": "Branch A", "actionType": "GENERIC" },
+                    { "nodeId": "task-b", "name": "Branch B", "actionType": "GENERIC" }
                   ],
                   "edges": [
                     { "edgeId": "start-decision", "from": "start", "to": "decision" },
@@ -276,7 +162,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeTask(), new SwitchNodeTask(), new TaskNodeTask())),
+                new NodeExecutorRegistry(List.of(new StartAction(), new SwitchAction(), new GenericAction())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -286,11 +172,11 @@ class WorkflowEngineTest {
                   "id": "else-branch-workflow",
                   "version": 1,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "type": "start" },
-                    { "nodeId": "decision", "name": "Decision", "type": "switch" },
-                    { "nodeId": "task-a", "name": "Branch A", "type": "task" },
-                    { "nodeId": "task-b", "name": "Branch B", "type": "task" },
-                    { "nodeId": "task-else", "name": "Else Branch", "type": "task" }
+                    { "nodeId": "start", "name": "Start", "actionType": "START" },
+                    { "nodeId": "decision", "name": "Decision", "actionType": "SWITCH" },
+                    { "nodeId": "task-a", "name": "Branch A", "actionType": "GENERIC" },
+                    { "nodeId": "task-b", "name": "Branch B", "actionType": "GENERIC" },
+                    { "nodeId": "task-else", "name": "Else Branch", "actionType": "GENERIC" }
                   ],
                   "edges": [
                     { "edgeId": "start-decision", "from": "start", "to": "decision" },
@@ -322,7 +208,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeTask(), new SwitchNodeTask(), new TaskNodeTask())),
+                new NodeExecutorRegistry(List.of(new StartAction(), new SwitchAction(), new GenericAction())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -332,11 +218,11 @@ class WorkflowEngineTest {
                   "id": "else-if-workflow",
                   "version": 1,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "type": "start" },
-                    { "nodeId": "decision", "name": "Decision", "type": "switch" },
-                    { "nodeId": "task-a", "name": "Branch A", "type": "task" },
-                    { "nodeId": "task-b", "name": "Branch B", "type": "task" },
-                    { "nodeId": "task-else", "name": "Else Branch", "type": "task" }
+                    { "nodeId": "start", "name": "Start", "actionType": "START" },
+                    { "nodeId": "decision", "name": "Decision", "actionType": "SWITCH" },
+                    { "nodeId": "task-a", "name": "Branch A", "actionType": "GENERIC" },
+                    { "nodeId": "task-b", "name": "Branch B", "actionType": "GENERIC" },
+                    { "nodeId": "task-else", "name": "Else Branch", "actionType": "GENERIC" }
                   ],
                   "edges": [
                     { "edgeId": "start-decision", "from": "start", "to": "decision" },

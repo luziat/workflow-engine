@@ -1,9 +1,11 @@
 package com.luziatcode.demoworkflowengine.service;
 
 import com.luziatcode.demoworkflowengine.service.workflow.domain.Edge;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -11,12 +13,9 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
+@RequiredArgsConstructor
 public class WorkflowDefinitionService {
     private final WorkflowDefinitionRepository repository;
-
-    public WorkflowDefinitionService(WorkflowDefinitionRepository repository) {
-        this.repository = repository;
-    }
 
     public WorkflowDefinition save(WorkflowDefinition definition) {
         validate(definition);
@@ -57,7 +56,7 @@ public class WorkflowDefinitionService {
                 throw new IllegalArgumentException("Edge references unknown node: " + edge.getFrom() + " -> " + edge.getTo());
             }
         }
-        long startCount = definition.getNodes().stream().filter(node -> "start".equals(node.getType())).count();
+        long startCount = definition.getNodes().stream().filter(node -> ActionType.START.equals(node.getActionType())).count();
         if (startCount != 1) {
             throw new IllegalArgumentException("Exactly one start node is required");
         }
@@ -71,28 +70,28 @@ public class WorkflowDefinitionService {
         Node start = new Node();
         start.setNodeId("start");
         start.setName("Start");
-        start.setType("start");
+        start.setActionType(ActionType.START);
 
         Node http = new Node();
         http.setNodeId("a");
         http.setName("Fetch API");
-        http.setType("http");
+        http.setActionType(ActionType.HTTP);
         http.setParams(Map.of("url", "https://example.org/api"));
 
         Node branch = new Node();
         branch.setNodeId("b");
         branch.setName("Branch");
-        branch.setType("switch");
+        branch.setActionType(ActionType.SWITCH);
 
         Node c1 = new Node();
         c1.setNodeId("c1");
         c1.setName("Positive Branch");
-        c1.setType("task");
+        c1.setActionType(ActionType.GENERIC);
 
         Node c2 = new Node();
         c2.setNodeId("c2");
         c2.setName("Negative Branch");
-        c2.setType("task");
+        c2.setActionType(ActionType.GENERIC);
 
         definition.setNodes(java.util.List.of(start, http, branch, c1, c2));
 

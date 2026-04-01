@@ -1,10 +1,11 @@
-package com.luziatcode.demoworkflowengine.service.workflow.task;
+package com.luziatcode.demoworkflowengine.service.workflow.action;
 
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutionContext;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeResult;
 
-public interface NodeTask {
-    String getType();
+public interface Action {
+    ActionType getType();
 
     NodeResult execute(NodeExecutionContext context);
 }

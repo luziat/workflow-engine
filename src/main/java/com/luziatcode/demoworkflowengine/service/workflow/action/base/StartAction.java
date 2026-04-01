@@ -1,17 +1,18 @@
-package com.luziatcode.demoworkflowengine.service.workflow.task.basic;
+package com.luziatcode.demoworkflowengine.service.workflow.action.base;
 
+import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutionContext;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeResult;
-import com.luziatcode.demoworkflowengine.service.workflow.task.NodeTask;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
 @Component
-public class StartNodeTask implements NodeTask {
+public class StartAction implements Action {
     @Override
-    public String getType() {
-        return "start";
+    public ActionType getType() {
+        return ActionType.START;
     }
 
     @Override
