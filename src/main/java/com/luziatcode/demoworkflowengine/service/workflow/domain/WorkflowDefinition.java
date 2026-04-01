@@ -1,4 +1,4 @@
-package com.luziatcode.demoworkflowengine.domain;
+package com.luziatcode.demoworkflowengine.service.workflow.domain;
 
 import java.util.ArrayList;
 import java.util.List;

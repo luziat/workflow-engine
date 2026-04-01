@@ -1,8 +1,8 @@
 package com.luziatcode.demoworkflowengine.service;
 
-import com.luziatcode.demoworkflowengine.domain.Edge;
-import com.luziatcode.demoworkflowengine.domain.Node;
-import com.luziatcode.demoworkflowengine.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.Edge;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
 import org.junit.jupiter.api.Test;
 

@@ -1,14 +1,15 @@
-package com.luziatcode.demoworkflowengine.executor;
+package com.luziatcode.demoworkflowengine.service.workflow.task.custom;
 
-import com.luziatcode.demoworkflowengine.engine.NodeExecutionContext;
-import com.luziatcode.demoworkflowengine.engine.NodeResult;
+import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutionContext;
+import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeResult;
+import com.luziatcode.demoworkflowengine.service.workflow.task.NodeTask;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
-public class HttpNodeExecutor implements NodeExecutor {
+public class HttpNodeTask implements NodeTask {
     @Override
     public String getType() {
         return "http";

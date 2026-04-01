@@ -2,19 +2,19 @@ package com.luziatcode.demoworkflowengine.engine;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.luziatcode.demoworkflowengine.domain.Edge;
-import com.luziatcode.demoworkflowengine.domain.ExecutionStatus;
-import com.luziatcode.demoworkflowengine.domain.NodeExecution;
-import com.luziatcode.demoworkflowengine.domain.WorkflowDefinition;
-import com.luziatcode.demoworkflowengine.domain.WorkflowExecution;
-import com.luziatcode.demoworkflowengine.executor.NodeExecutor;
-import com.luziatcode.demoworkflowengine.executor.StartNodeExecutor;
-import com.luziatcode.demoworkflowengine.executor.SwitchNodeExecutor;
-import com.luziatcode.demoworkflowengine.executor.TaskNodeExecutor;
-import com.luziatcode.demoworkflowengine.executor.WaitNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ExecutionStatus;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.task.NodeTask;
+import com.luziatcode.demoworkflowengine.service.workflow.task.basic.StartNodeTask;
+import com.luziatcode.demoworkflowengine.service.workflow.task.basic.SwitchNodeTask;
+import com.luziatcode.demoworkflowengine.service.workflow.task.custom.TaskNodeTask;
+import com.luziatcode.demoworkflowengine.service.workflow.task.basic.WaitNodeTask;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
+import com.luziatcode.demoworkflowengine.service.workflow.engine.*;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -33,7 +33,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TaskNodeExecutor())),
+                new NodeExecutorRegistry(List.of(new StartNodeTask(), new TaskNodeTask())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -76,7 +76,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new WaitNodeExecutor())),
+                new NodeExecutorRegistry(List.of(new StartNodeTask(), new WaitNodeTask())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -114,7 +114,7 @@ class WorkflowEngineTest {
     void runResumesFromWaitingExecution() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        NodeExecutor resumableWaitExecutor = new NodeExecutor() {
+        NodeTask resumableWaitExecutor = new NodeTask() {
             @Override
             public String getType() {
                 return "approval-wait";
@@ -129,7 +129,7 @@ class WorkflowEngineTest {
             }
         };
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), resumableWaitExecutor, new TaskNodeExecutor())),
+                new NodeExecutorRegistry(List.of(new StartNodeTask(), resumableWaitExecutor, new TaskNodeTask())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -184,7 +184,7 @@ class WorkflowEngineTest {
     void runMarksExecutionFailedWhenExecutorThrows() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        NodeExecutor failingExecutor = new NodeExecutor() {
+        NodeTask failingExecutor = new NodeTask() {
             @Override
             public String getType() {
                 return "fail";
@@ -196,7 +196,7 @@ class WorkflowEngineTest {
             }
         };
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), failingExecutor)),
+                new NodeExecutorRegistry(List.of(new StartNodeTask(), failingExecutor)),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -235,7 +235,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new SwitchNodeExecutor(), new TaskNodeExecutor())),
+                new NodeExecutorRegistry(List.of(new StartNodeTask(), new SwitchNodeTask(), new TaskNodeTask())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -276,7 +276,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new SwitchNodeExecutor(), new TaskNodeExecutor())),
+                new NodeExecutorRegistry(List.of(new StartNodeTask(), new SwitchNodeTask(), new TaskNodeTask())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()
@@ -322,7 +322,7 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new SwitchNodeExecutor(), new TaskNodeExecutor())),
+                new NodeExecutorRegistry(List.of(new StartNodeTask(), new SwitchNodeTask(), new TaskNodeTask())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleConditionEvaluator()

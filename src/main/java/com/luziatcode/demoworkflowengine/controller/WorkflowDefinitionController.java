@@ -1,6 +1,6 @@
 package com.luziatcode.demoworkflowengine.controller;
 
-import com.luziatcode.demoworkflowengine.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.WorkflowDefinitionService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

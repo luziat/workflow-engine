@@ -1,11 +1,11 @@
-package com.luziatcode.demoworkflowengine.engine;
+package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
-import com.luziatcode.demoworkflowengine.domain.Edge;
-import com.luziatcode.demoworkflowengine.domain.ExecutionStatus;
-import com.luziatcode.demoworkflowengine.domain.Node;
-import com.luziatcode.demoworkflowengine.domain.NodeExecution;
-import com.luziatcode.demoworkflowengine.domain.WorkflowDefinition;
-import com.luziatcode.demoworkflowengine.domain.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.Edge;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ExecutionStatus;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import org.springframework.stereotype.Component;

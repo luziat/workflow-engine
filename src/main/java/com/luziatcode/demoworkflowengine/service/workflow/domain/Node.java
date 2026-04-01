@@ -1,4 +1,4 @@
-package com.luziatcode.demoworkflowengine.domain;
+package com.luziatcode.demoworkflowengine.service.workflow.domain;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 

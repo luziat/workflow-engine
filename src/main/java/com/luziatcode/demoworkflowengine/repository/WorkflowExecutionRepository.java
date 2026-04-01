@@ -1,6 +1,6 @@
 package com.luziatcode.demoworkflowengine.repository;
 
-import com.luziatcode.demoworkflowengine.domain.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
 import org.springframework.stereotype.Repository;
 
 import java.util.Map;

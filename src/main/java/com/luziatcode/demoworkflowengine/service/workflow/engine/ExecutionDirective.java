@@ -1,4 +1,4 @@
-package com.luziatcode.demoworkflowengine.engine;
+package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
 public enum ExecutionDirective {
     NEXT,

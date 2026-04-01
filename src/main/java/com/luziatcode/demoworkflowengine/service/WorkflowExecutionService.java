@@ -1,8 +1,8 @@
 package com.luziatcode.demoworkflowengine.service;
 
-import com.luziatcode.demoworkflowengine.domain.ExecutionStatus;
-import com.luziatcode.demoworkflowengine.domain.WorkflowDefinition;
-import com.luziatcode.demoworkflowengine.domain.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ExecutionStatus;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import org.springframework.stereotype.Service;
 

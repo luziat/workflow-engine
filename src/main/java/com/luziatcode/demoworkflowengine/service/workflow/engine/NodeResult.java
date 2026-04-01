@@ -1,4 +1,4 @@
-package com.luziatcode.demoworkflowengine.engine;
+package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
