@@ -25,9 +25,4 @@ public class WorkflowDefinitionController {
     public WorkflowDefinition getLatest(@PathVariable String workflowId) {
         return workflowDefinitionService.getLatest(workflowId);
     }
-
-    @PostMapping("/sample")
-    public WorkflowDefinition createSample() {
-        return workflowDefinitionService.createSample();
-    }
 }
