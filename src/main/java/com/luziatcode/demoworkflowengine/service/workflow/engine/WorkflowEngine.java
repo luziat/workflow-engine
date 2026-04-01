@@ -20,38 +20,38 @@ public class WorkflowEngine {
     private final NodeExecutionRepository nodeExecutionRepository;
     private final SimpleConditionEvaluator conditionEvaluator;
 
-    public WorkflowExecution run(WorkflowDefinition definition, WorkflowExecution execution) {
+    public WorkflowExecution run(WorkflowDefinition definition, WorkflowExecution workflowExecution) {
         NodeExecution nodeExecution = null;
         try {
-            Node current = execution.getCurrentNodeId() == null
+            Node current = workflowExecution.getCurrentNodeId() == null
                     ? findStartNode(definition)
-                    : findNode(definition, execution.getCurrentNodeId());
+                    : findNode(definition, workflowExecution.getCurrentNodeId());
 
-            execution.setStatus(ExecutionStatus.RUNNING);
-            workflowExecutionService.update(execution);
+            workflowExecution.setStatus(ExecutionStatus.RUNNING);
+            workflowExecutionService.update(workflowExecution);
 
             while (current != null) {
-                execution.setCurrentNodeId(current.getNodeId());
-                workflowExecutionService.update(execution);
+                workflowExecution.setCurrentNodeId(current.getNodeId());
+                workflowExecutionService.update(workflowExecution);
 
-                nodeExecution = beginNodeExecution(execution, current);
-                Map<String, Object> contextBeforeExecution = new LinkedHashMap<>(execution.getContext());
+                nodeExecution = buildNodeExecution(workflowExecution, current);
+                Map<String, Object> contextBeforeExecution = new LinkedHashMap<>(workflowExecution.getContext());
                 registry.getRequired(current.getActionType())
-                        .execute(new NodeExecutionContext(definition, execution, current));
+                        .execute(new NodeExecutionContext(definition, workflowExecution, current));
 
-                nodeExecution.setOutput(extractNodeOutput(contextBeforeExecution, execution.getContext()));
+                nodeExecution.setOutput(extractNodeOutput(contextBeforeExecution, workflowExecution.getContext()));
                 nodeExecution.setEndedAt(Instant.now());
 
-                Node next = resolveNextNode(definition, current, execution.getContext());
+                Node next = resolveNextNode(definition, current, workflowExecution.getContext());
                 nodeExecution.setStatus(ExecutionStatus.SUCCESS);
                 nodeExecutionRepository.save(nodeExecution);
                 nodeExecution = null;
                 current = next;
             }
 
-            execution.setStatus(ExecutionStatus.SUCCESS);
-            execution.setCurrentNodeId(null);
-            return workflowExecutionService.update(execution);
+            workflowExecution.setStatus(ExecutionStatus.SUCCESS);
+            workflowExecution.setCurrentNodeId(null);
+            return workflowExecutionService.update(workflowExecution);
         } catch (Exception exception) {
             if (nodeExecution != null) {
                 nodeExecution.setStatus(ExecutionStatus.FAILED);
@@ -60,13 +60,13 @@ public class WorkflowEngine {
                 nodeExecutionRepository.save(nodeExecution);
             }
 
-            execution.setStatus(ExecutionStatus.FAILED);
-            execution.setFailureMessage(exception.getMessage());
-            return workflowExecutionService.update(execution);
+            workflowExecution.setStatus(ExecutionStatus.FAILED);
+            workflowExecution.setFailureMessage(exception.getMessage());
+            return workflowExecutionService.update(workflowExecution);
         }
     }
 
-    private NodeExecution beginNodeExecution(WorkflowExecution execution, Node current) {
+    private NodeExecution buildNodeExecution(WorkflowExecution execution, Node current) {
         NodeExecution nodeExecution = new NodeExecution();
         nodeExecution.setExecutionId(execution.getExecutionId());
         nodeExecution.setNodeId(current.getNodeId());

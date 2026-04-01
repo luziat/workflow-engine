@@ -30,8 +30,8 @@ public class WorkflowExecutionController {
     public WorkflowExecution start(@PathVariable String workflowId,
                                    @RequestBody(required = false) Map<String, Object> input) {
         WorkflowDefinition definition = workflowDefinitionService.getLatest(workflowId);
-        WorkflowExecution execution = workflowExecutionService.create(definition, input);
-        return workflowEngine.run(definition, execution);
+        WorkflowExecution workflowExecution = workflowExecutionService.create(definition, input);
+        return workflowEngine.run(definition, workflowExecution);
     }
 
     @GetMapping("/{executionId}")
