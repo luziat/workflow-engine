@@ -7,8 +7,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Component
 @RequiredArgsConstructor
@@ -33,22 +35,12 @@ public class WorkflowEngine {
                 workflowExecutionService.update(execution);
 
                 nodeExecution = beginNodeExecution(execution, current);
-                NodeResult result = registry.getRequired(current.getActionType())
+                Map<String, Object> contextBeforeExecution = new LinkedHashMap<>(execution.getContext());
+                registry.getRequired(current.getActionType())
                         .execute(new NodeExecutionContext(definition, execution, current));
 
-                execution.getContext().putAll(result.getOutput());
-                nodeExecution.setOutput(result.getOutput());
+                nodeExecution.setOutput(extractNodeOutput(contextBeforeExecution, execution.getContext()));
                 nodeExecution.setEndedAt(Instant.now());
-
-                if (result.getDirective() == ExecutionDirective.FINISH) {
-                    nodeExecution.setStatus(ExecutionStatus.SUCCESS);
-                    nodeExecutionRepository.save(nodeExecution);
-                    nodeExecution = null;
-
-                    execution.setStatus(ExecutionStatus.SUCCESS);
-                    execution.setCurrentNodeId(null);
-                    return workflowExecutionService.update(execution);
-                }
 
                 Node next = resolveNextNode(definition, current, execution.getContext());
                 nodeExecution.setStatus(ExecutionStatus.SUCCESS);
@@ -82,6 +74,16 @@ public class WorkflowEngine {
         nodeExecution.setStartedAt(Instant.now());
         nodeExecution.setInput(Map.copyOf(execution.getContext()));
         return nodeExecution;
+    }
+
+    private Map<String, Object> extractNodeOutput(Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> output = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : after.entrySet()) {
+            if (!Objects.equals(before.get(entry.getKey()), entry.getValue())) {
+                output.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return output;
     }
 
     private Node findStartNode(WorkflowDefinition definition) {

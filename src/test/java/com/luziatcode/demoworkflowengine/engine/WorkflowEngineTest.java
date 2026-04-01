@@ -77,7 +77,7 @@ class WorkflowEngineTest {
             }
 
             @Override
-            public NodeResult execute(NodeExecutionContext context) {
+            public void execute(NodeExecutionContext context) {
                 throw new IllegalStateException("boom");
             }
         };
