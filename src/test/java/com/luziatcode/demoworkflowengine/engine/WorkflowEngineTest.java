@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -247,11 +249,81 @@ class WorkflowEngineTest {
         assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(2).getStatus());
     }
 
+    @Test
+    void stopMarksExecutionStoppedAndStopsCurrentAction() throws Exception {
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
+        WorkflowEngine engine = new WorkflowEngine(
+                new NodeExecutorRegistry(List.of(new StartAction(), new com.luziatcode.demoworkflowengine.service.workflow.action.custom.TimerAction(), new GenericAction())),
+                executionService,
+                nodeExecutionRepository,
+                new SimpleConditionEvaluator()
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "stoppable-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "nodeId": "start", "name": "Start", "actionType": "START" },
+                    { "nodeId": "wait", "name": "Wait", "actionType": "TIMER" },
+                    { "nodeId": "task", "name": "Should Not Run", "actionType": "GENERIC" }
+                  ],
+                  "edges": [
+                    { "edgeId": "start-wait", "from": "start", "to": "wait" },
+                    { "edgeId": "wait-task", "from": "wait", "to": "task" }
+                  ]
+                }
+                """);
+        WorkflowExecution execution = executionService.create(definition, Map.of());
+
+        CompletableFuture<WorkflowExecution> future = CompletableFuture.supplyAsync(() -> engine.run(definition, execution));
+
+        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.RUNNING);
+        awaitCurrentNode(executionService, execution.getExecutionId(), "wait");
+
+        WorkflowExecution stopping = engine.stop(execution.getExecutionId(), "manual stop");
+        assertEquals(ExecutionStatus.STOPPING, stopping.getStatus());
+
+        WorkflowExecution result = future.get(5, TimeUnit.SECONDS);
+
+        assertEquals(ExecutionStatus.STOPPED, result.getStatus());
+        assertNull(result.getCurrentNodeId());
+        assertEquals("manual stop", result.getFailureMessage());
+        assertNull(result.getContext().get("lastTask"));
+
+        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
+        assertEquals(2, nodeExecutions.size());
+        assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(0).getStatus());
+        assertEquals(ExecutionStatus.STOPPED, nodeExecutions.get(1).getStatus());
+        assertEquals("wait", nodeExecutions.get(1).getNodeId());
+        assertEquals("manual stop", nodeExecutions.get(1).getMessage());
+    }
+
     private WorkflowDefinition definition(String json) {
         try {
             return objectMapper.readValue(json, WorkflowDefinition.class);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Failed to parse workflow definition json", exception);
         }
+    }
+
+    private void awaitStatus(WorkflowExecutionService executionService, String executionId, ExecutionStatus status) throws InterruptedException {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            if (executionService.getRequired(executionId).getStatus() == status) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        throw new AssertionError("Timed out waiting for status " + status);
+    }
+
+    private void awaitCurrentNode(WorkflowExecutionService executionService, String executionId, String nodeId) throws InterruptedException {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            if (nodeId.equals(executionService.getRequired(executionId).getCurrentNodeId())) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        throw new AssertionError("Timed out waiting for current node " + nodeId);
     }
 }

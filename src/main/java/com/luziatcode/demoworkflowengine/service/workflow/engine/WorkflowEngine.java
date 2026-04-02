@@ -1,6 +1,7 @@
 package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
 import com.luziatcode.demoworkflowengine.service.workflow.domain.*;
+import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import lombok.RequiredArgsConstructor;
@@ -11,10 +12,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 @RequiredArgsConstructor
 public class WorkflowEngine {
+    private final ConcurrentMap<String, ExecutionBoundAction> activeActions = new ConcurrentHashMap<>();
+
     private final NodeExecutorRegistry registry;
     private final WorkflowExecutionService workflowExecutionService;
     private final NodeExecutionRepository nodeExecutionRepository;
@@ -34,13 +40,26 @@ public class WorkflowEngine {
                 workflowExecution.setCurrentNodeId(current.getNodeId());
                 workflowExecutionService.update(workflowExecution);
 
+                if (workflowExecution.getStatus() == ExecutionStatus.STOPPING) {
+                    return stopExecution(workflowExecution, nodeExecution, "Stopped before node execution");
+                }
+
                 nodeExecution = buildNodeExecution(workflowExecution, current);
                 Map<String, Object> contextBeforeExecution = new LinkedHashMap<>(workflowExecution.getContext());
-                registry.getRequired(current.getActionType())
-                        .execute(new NodeExecutionContext(definition, workflowExecution, current));
+                ExecutionBoundAction action = new ExecutionBoundAction(registry.getRequired(current.getActionType()));
+                activeActions.put(workflowExecution.getExecutionId(), action);
+                try {
+                    action.execute(new NodeExecutionContext(definition, workflowExecution, current));
+                } finally {
+                    activeActions.remove(workflowExecution.getExecutionId(), action);
+                }
 
                 nodeExecution.setOutput(extractNodeOutput(contextBeforeExecution, workflowExecution.getContext()));
                 nodeExecution.setEndedAt(Instant.now());
+
+                if (workflowExecution.getStatus() == ExecutionStatus.STOPPING) {
+                    return stopExecution(workflowExecution, nodeExecution, action.stopReason());
+                }
 
                 Node next = resolveNextNode(definition, current, workflowExecution.getContext());
                 nodeExecution.setStatus(ExecutionStatus.SUCCESS);
@@ -66,6 +85,21 @@ public class WorkflowEngine {
         }
     }
 
+    public WorkflowExecution stop(String executionId, String reason) {
+        WorkflowExecution execution = workflowExecutionService.markStopping(executionId);
+        if (execution.getStatus() != ExecutionStatus.STOPPING) {
+            return execution;
+        }
+
+        ExecutionBoundAction activeAction = activeActions.get(executionId);
+        if (activeAction == null) {
+            return stopExecution(execution, null, reason);
+        }
+
+        activeAction.stop(reason);
+        return workflowExecutionService.getRequired(executionId);
+    }
+
     private NodeExecution buildNodeExecution(WorkflowExecution execution, Node current) {
         NodeExecution nodeExecution = new NodeExecution();
         nodeExecution.setExecutionId(execution.getExecutionId());
@@ -84,6 +118,20 @@ public class WorkflowEngine {
             }
         }
         return output;
+    }
+
+    private WorkflowExecution stopExecution(WorkflowExecution workflowExecution, NodeExecution nodeExecution, String reason) {
+        if (nodeExecution != null) {
+            nodeExecution.setStatus(ExecutionStatus.STOPPED);
+            nodeExecution.setEndedAt(nodeExecution.getEndedAt() != null ? nodeExecution.getEndedAt() : Instant.now());
+            nodeExecution.setMessage(reason);
+            nodeExecutionRepository.save(nodeExecution);
+        }
+
+        workflowExecution.setStatus(ExecutionStatus.STOPPED);
+        workflowExecution.setCurrentNodeId(null);
+        workflowExecution.setFailureMessage(reason);
+        return workflowExecutionService.update(workflowExecution);
     }
 
     private Node findStartNode(WorkflowDefinition definition) {
@@ -133,5 +181,45 @@ public class WorkflowEngine {
             throw new IllegalStateException("Multiple default edges configured from node: " + current.getNodeId());
         }
         return findNode(definition, defaultEdges.getFirst().getTo());
+    }
+
+    private static final class ExecutionBoundAction implements Action {
+        private final Action delegate;
+        private final AtomicReference<Thread> executingThread = new AtomicReference<>();
+        private final AtomicReference<String> stopReason = new AtomicReference<>("Stopped by user request");
+
+        private ExecutionBoundAction(Action delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public ActionType getType() {
+            return delegate.getType();
+        }
+
+        @Override
+        public void execute(NodeExecutionContext context) {
+            executingThread.set(Thread.currentThread());
+            try {
+                delegate.execute(context);
+            } finally {
+                executingThread.set(null);
+            }
+        }
+
+        @Override
+        public void stop(String reason) {
+            stopReason.set(reason);
+            delegate.stop(reason);
+
+            Thread thread = executingThread.get();
+            if (thread != null) {
+                thread.interrupt();
+            }
+        }
+
+        private String stopReason() {
+            return stopReason.get();
+        }
     }
 }

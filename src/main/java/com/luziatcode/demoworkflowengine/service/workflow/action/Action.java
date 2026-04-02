@@ -7,4 +7,7 @@ public interface Action {
     ActionType getType();
 
     void execute(NodeExecutionContext context);
+
+    default void stop(String reason) {
+    }
 }

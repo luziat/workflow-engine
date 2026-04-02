@@ -10,11 +10,19 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class WorkflowExecutionService {
+    private static final Set<ExecutionStatus> TERMINAL_STATUSES = Set.of(
+            ExecutionStatus.SUCCESS,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.STOPPED,
+            ExecutionStatus.CANCELLED
+    );
+
     private final WorkflowExecutionRepository repository;
 
     public WorkflowExecution create(WorkflowDefinition definition, Map<String, Object> input) {
@@ -37,5 +45,15 @@ public class WorkflowExecutionService {
     public WorkflowExecution getRequired(String executionId) {
         return repository.findById(executionId)
                 .orElseThrow(() -> new IllegalArgumentException("Execution not found: " + executionId));
+    }
+
+    public WorkflowExecution markStopping(String executionId) {
+        WorkflowExecution execution = getRequired(executionId);
+        if (TERMINAL_STATUSES.contains(execution.getStatus())) {
+            return execution;
+        }
+        execution.setStatus(ExecutionStatus.STOPPING);
+        execution.setFailureMessage(null);
+        return update(execution);
     }
 }

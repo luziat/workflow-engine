@@ -34,6 +34,15 @@ public class WorkflowExecutionController {
         return workflowEngine.run(definition, workflowExecution);
     }
 
+    @PostMapping("/{executionId}/stop")
+    public WorkflowExecution stop(@PathVariable String executionId,
+                                  @RequestBody(required = false) StopRequest request) {
+        String reason = request != null && request.reason() != null && !request.reason().isBlank()
+                ? request.reason()
+                : "Stopped by user request";
+        return workflowEngine.stop(executionId, reason);
+    }
+
     @GetMapping("/{executionId}")
     public WorkflowExecution get(@PathVariable String executionId) {
         return workflowExecutionService.getRequired(executionId);
@@ -42,5 +51,8 @@ public class WorkflowExecutionController {
     @GetMapping("/{executionId}/nodes")
     public List<?> getNodeExecutions(@PathVariable String executionId) {
         return nodeExecutionRepository.findByExecutionId(executionId);
+    }
+
+    private record StopRequest(String reason) {
     }
 }
