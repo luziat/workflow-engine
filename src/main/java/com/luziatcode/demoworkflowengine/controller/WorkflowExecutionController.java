@@ -31,7 +31,7 @@ public class WorkflowExecutionController {
                                    @RequestBody(required = false) Map<String, Object> input) {
         WorkflowDefinition definition = workflowDefinitionService.getLatest(workflowId);
         WorkflowExecution workflowExecution = workflowExecutionService.create(definition, input);
-        return workflowEngine.run(workflowExecution);
+        return workflowEngine.runAsync(workflowExecution);
     }
 
     @PostMapping("/{executionId}/stop")

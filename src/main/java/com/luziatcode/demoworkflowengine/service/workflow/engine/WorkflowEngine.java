@@ -12,6 +12,7 @@ import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.core.task.TaskExecutor;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayDeque;
@@ -37,6 +38,12 @@ public class WorkflowEngine {
     private final NodeExecutorRegistry registry;
     private final WorkflowExecutionService workflowExecutionService;
     private final NodeExecutionRepository nodeExecutionRepository;
+    private final TaskExecutor workflowTaskExecutor;
+
+    public WorkflowExecution runAsync(WorkflowExecution workflowExecution) {
+        workflowTaskExecutor.execute(() -> run(workflowExecution));
+        return workflowExecutionService.getRequired(workflowExecution.getExecutionId());
+    }
 
     public WorkflowExecution run(WorkflowExecution workflowExecution) {
         WorkflowDefinition definition = workflowExecution.getDefinition();

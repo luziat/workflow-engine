@@ -19,22 +19,26 @@ import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.*;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TimerNodeExecutor;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
+import org.springframework.core.task.SyncTaskExecutor;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkflowEngineTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    @DisplayName("선형 워크플로우를 실행하고 노드 실행 이력을 저장한다")
     void runCompletesLinearWorkflowAndPersistsNodeExecutions() {
         /* 저장소 */
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
@@ -45,7 +49,7 @@ class WorkflowEngineTest {
 
         /* 엔진 */
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new GenericNodeExecutor()));
-        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, executionService, nodeExecutionRepository);
+        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, executionService, nodeExecutionRepository, new SyncTaskExecutor());
 
         WorkflowDefinition definition = definition("""
                 {
@@ -86,6 +90,7 @@ class WorkflowEngineTest {
     }
 
     @Test
+    @DisplayName("노드 실행기가 예외를 던지면 실행을 FAILED로 기록한다")
     void runMarksExecutionFailedWhenExecutorThrows() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
@@ -103,7 +108,8 @@ class WorkflowEngineTest {
         WorkflowEngine engine = new WorkflowEngine(
                 new NodeExecutorRegistry(List.of(new StartNodeExecutor(), failingExecutor)),
                 executionService,
-                nodeExecutionRepository
+                nodeExecutionRepository,
+                new SyncTaskExecutor()
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -141,13 +147,15 @@ class WorkflowEngineTest {
     }
 
     @Test
+    @DisplayName("병렬 분기와 머지 연결을 포함한 connections를 처리한다")
     void runSupportsN8nConnectionsWithParallelBranchesAndMerge() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
                 new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor(), new MergeNodeExecutor())),
                 executionService,
-                nodeExecutionRepository
+                nodeExecutionRepository,
+                new SyncTaskExecutor()
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -207,6 +215,66 @@ class WorkflowEngineTest {
     }
 
     @Test
+    @DisplayName("비동기 실행 시작은 execution을 즉시 반환하고 백그라운드에서 상태를 진행시킨다")
+    void runAsyncStartsExecutionInBackground() throws Exception {
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
+        WorkflowEngine engine = new WorkflowEngine(
+                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TimerNodeExecutor(), new GenericNodeExecutor())),
+                executionService,
+                nodeExecutionRepository,
+                new SimpleAsyncTaskExecutor("workflow-test-")
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "async-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_wait", "name": "Wait", "type": "TIMER", "params": {} },
+                    { "id": "node_finish", "name": "Finish", "type": "GENERIC", "params": {} }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [
+                        [
+                          { "node": "node_wait", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    },
+                    "node_wait": {
+                      "main": [
+                        [
+                          { "node": "node_finish", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    }
+                  }
+                }
+                """);
+        WorkflowExecution execution = executionService.create(definition, Map.of());
+
+        WorkflowExecution started = engine.runAsync(execution);
+
+        assertEquals(execution.getExecutionId(), started.getExecutionId());
+        assertTrue(
+                List.of(ExecutionStatus.READY, ExecutionStatus.RUNNING).contains(
+                        executionService.getRequired(execution.getExecutionId()).getStatus()
+                )
+        );
+
+        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.RUNNING);
+        awaitCurrentNode(executionService, execution.getExecutionId(), "node_wait");
+        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.SUCCESS);
+
+        WorkflowExecution result = executionService.getRequired(execution.getExecutionId());
+        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+        assertNull(result.getCurrentNodeId());
+        assertEquals("node_finish", result.getContext().get("handledBy"));
+    }
+
+    @Test
+    @DisplayName("workflow JSON을 NodeType 기반 정의로 역직렬화한다")
     void parsesActionTypeWorkflowJson() {
         WorkflowDefinition definition = definition("""
                 {
@@ -258,13 +326,14 @@ class WorkflowEngineTest {
     }
 
     @Test
+    @DisplayName("중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
     void stopMarksExecutionStoppedAndStopsCurrentAction() throws Exception {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
                 new NodeExecutorRegistry(List.of(
                         new StartNodeExecutor(),
-                        new com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TimerNodeExecutor(),
+                        new TimerNodeExecutor(),
                         new GenericNodeExecutor(),
                         new SwitchNodeExecutor(),
                         new HttpNodeExecutor(),
@@ -273,7 +342,8 @@ class WorkflowEngineTest {
                         new NoteNodeExecutor()
                 )),
                 executionService,
-                nodeExecutionRepository
+                nodeExecutionRepository,
+                new SimpleAsyncTaskExecutor("workflow-stop-test-")
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -304,7 +374,8 @@ class WorkflowEngineTest {
                 """);
         WorkflowExecution execution = executionService.create(definition, Map.of());
 
-        CompletableFuture<WorkflowExecution> future = CompletableFuture.supplyAsync(() -> engine.run(execution));
+        WorkflowExecution started = engine.runAsync(execution);
+        assertEquals(execution.getExecutionId(), started.getExecutionId());
 
         awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.RUNNING);
         awaitCurrentNode(executionService, execution.getExecutionId(), "node_wait");
@@ -312,7 +383,8 @@ class WorkflowEngineTest {
         WorkflowExecution stopping = engine.stop(execution.getExecutionId(), "manual stop");
         assertEquals(ExecutionStatus.STOPPING, stopping.getStatus());
 
-        WorkflowExecution result = future.get(5, TimeUnit.SECONDS);
+        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.STOPPED);
+        WorkflowExecution result = executionService.getRequired(execution.getExecutionId());
 
         assertEquals(ExecutionStatus.STOPPED, result.getStatus());
         assertNull(result.getCurrentNodeId());
@@ -336,7 +408,7 @@ class WorkflowEngineTest {
     }
 
     private void awaitStatus(WorkflowExecutionService executionService, String executionId, ExecutionStatus status) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
+        for (int attempt = 0; attempt < 500; attempt++) {
             if (executionService.getRequired(executionId).getStatus() == status) {
                 return;
             }
@@ -346,7 +418,7 @@ class WorkflowEngineTest {
     }
 
     private void awaitCurrentNode(WorkflowExecutionService executionService, String executionId, String nodeId) throws InterruptedException {
-        for (int attempt = 0; attempt < 100; attempt++) {
+        for (int attempt = 0; attempt < 500; attempt++) {
             if (nodeId.equals(executionService.getRequired(executionId).getCurrentNodeId())) {
                 return;
             }
