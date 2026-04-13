@@ -1,8 +1,8 @@
 package com.luziatcode.demoworkflowengine.service;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.ExecutionStatus;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.ExecutionStatus;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

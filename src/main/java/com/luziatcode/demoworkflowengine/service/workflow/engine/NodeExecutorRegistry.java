@@ -1,6 +1,6 @@
 package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeType;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

@@ -1,11 +1,10 @@
 package com.luziatcode.demoworkflowengine.service;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.ConnectionTarget;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.Edge;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeConnections;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeType;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.Node;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeConnectionTarget;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeOutputs;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutorRegistry;
 import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
 import lombok.RequiredArgsConstructor;
@@ -50,25 +49,20 @@ public class WorkflowDefinitionService {
         }
         Set<String> nodeIds = new HashSet<>();
         for (Node node : definition.getNodes()) {
-            if (node.getNodeId() == null || node.getNodeId().isBlank()) {
+            if (node.getId() == null || node.getId().isBlank()) {
                 throw new IllegalArgumentException("Node id is required");
             }
-            if (!nodeIds.add(node.getNodeId())) {
-                throw new IllegalArgumentException("Duplicate node id: " + node.getNodeId());
+            if (!nodeIds.add(node.getId())) {
+                throw new IllegalArgumentException("Duplicate node id: " + node.getId());
             }
             if (node.getName() == null || node.getName().isBlank()) {
                 throw new IllegalArgumentException("Node name is required");
             }
             if (node.getType() == null) {
-                throw new IllegalArgumentException("Node type is required: " + node.getNodeId());
+                throw new IllegalArgumentException("Node type is required: " + node.getId());
             }
             if (!nodeExecutorRegistry.supportedTypes().contains(node.getType())) {
                 throw new IllegalArgumentException("Unsupported node type: " + node.getType());
-            }
-        }
-        for (Edge edge : definition.getEdges()) {
-            if (!nodeIds.contains(edge.getFrom()) || !nodeIds.contains(edge.getTo())) {
-                throw new IllegalArgumentException("Edge references unknown node: " + edge.getFrom() + " -> " + edge.getTo());
             }
         }
         for (var entry : definition.getConnections().entrySet()) {
@@ -83,7 +77,7 @@ public class WorkflowDefinitionService {
         }
     }
 
-    private void validateConnections(Set<String> nodeIds, NodeConnections connections) {
+    private void validateConnections(Set<String> nodeIds, NodeOutputs connections) {
         if (connections == null || connections.getMain() == null) {
             return;
         }
@@ -91,7 +85,7 @@ public class WorkflowDefinitionService {
             if (output == null) {
                 continue;
             }
-            for (ConnectionTarget target : output) {
+            for (NodeConnectionTarget target : output) {
                 if (target == null) {
                     continue;
                 }

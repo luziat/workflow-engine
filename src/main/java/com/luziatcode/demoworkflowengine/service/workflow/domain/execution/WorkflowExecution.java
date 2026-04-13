@@ -1,5 +1,7 @@
-package com.luziatcode.demoworkflowengine.service.workflow.domain;
+package com.luziatcode.demoworkflowengine.service.workflow.domain.execution;
 
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.ExecutionStatus;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;

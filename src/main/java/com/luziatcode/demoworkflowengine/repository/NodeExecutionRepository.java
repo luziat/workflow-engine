@@ -1,6 +1,6 @@
 package com.luziatcode.demoworkflowengine.repository;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.NodeExecution;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;

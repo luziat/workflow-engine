@@ -1,6 +1,12 @@
 package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.*;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.ExecutionStatus;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.Node;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeConnectionTarget;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.NodeExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
@@ -48,7 +54,7 @@ public class WorkflowEngine {
             Node startNode = workflowExecution.getCurrentNodeId() == null
                     ? findStartNode(definition)
                     : findNode(definition, workflowExecution.getCurrentNodeId());
-            readyNodes.add(startNode.getNodeId());
+            readyNodes.add(startNode.getId());
 
             workflowExecution.setStatus(ExecutionStatus.RUNNING);
             workflowExecutionService.update(workflowExecution);
@@ -63,7 +69,7 @@ public class WorkflowEngine {
                     continue;
                 }
 
-                workflowExecution.setCurrentNodeId(current.getNodeId());
+                workflowExecution.setCurrentNodeId(current.getId());
                 workflowExecutionService.update(workflowExecution);
 
                 if (workflowExecution.getStatus() == ExecutionStatus.STOPPING) {
@@ -104,14 +110,14 @@ public class WorkflowEngine {
                 for (OutgoingConnection outgoing : resolveOutgoing(definition, current, nodesById, selectedOutputs)) {
                     Node target = outgoing.target();
                     if (NodeType.MERGE.equals(target.getType())) {
-                        Set<Integer> arrivals = mergeArrivals.computeIfAbsent(target.getNodeId(), key -> new HashSet<>());
+                        Set<Integer> arrivals = mergeArrivals.computeIfAbsent(target.getId(), key -> new HashSet<>());
                         arrivals.add(outgoing.targetInputIndex());
-                        if (arrivals.size() < mergeInputCounts.getOrDefault(target.getNodeId(), 1)) {
+                        if (arrivals.size() < mergeInputCounts.getOrDefault(target.getId(), 1)) {
                             continue;
                         }
                         arrivals.clear();
                     }
-                    readyNodes.addLast(target.getNodeId());
+                    readyNodes.addLast(target.getId());
                 }
             }
 
@@ -150,7 +156,7 @@ public class WorkflowEngine {
     private NodeExecution buildNodeExecution(WorkflowExecution execution, Node current) {
         NodeExecution nodeExecution = new NodeExecution();
         nodeExecution.setExecutionId(execution.getExecutionId());
-        nodeExecution.setNodeId(current.getNodeId());
+        nodeExecution.setNodeId(current.getId());
         nodeExecution.setStatus(ExecutionStatus.RUNNING);
         nodeExecution.setStartedAt(ZonedDateTime.now());
         nodeExecution.setInput(Map.copyOf(execution.getContext()));
@@ -190,7 +196,7 @@ public class WorkflowEngine {
 
     private Node findNode(WorkflowDefinition definition, String nodeId) {
         return definition.getNodes().stream()
-                .filter(node -> node.getNodeId().equals(nodeId))
+                .filter(node -> node.getId().equals(nodeId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
     }
@@ -198,60 +204,40 @@ public class WorkflowEngine {
     private Map<String, Node> indexNodesById(WorkflowDefinition definition) {
         Map<String, Node> nodes = new LinkedHashMap<>();
         for (Node node : definition.getNodes()) {
-            nodes.put(node.getNodeId(), node);
+            nodes.put(node.getId(), node);
         }
         return nodes;
     }
 
     private Map<String, Integer> countMergeInputs(WorkflowDefinition definition, Map<String, Node> nodesById) {
         Map<String, Integer> inputCounts = new HashMap<>();
-        if (!definition.getConnections().isEmpty()) {
-            definition.getConnections().values().stream()
-                    .map(connections -> connections.getMain())
-                    .filter(Objects::nonNull)
-                    .flatMap(List::stream)
-                    .filter(Objects::nonNull)
-                    .flatMap(List::stream)
-                    .filter(Objects::nonNull)
-                    .forEach(target -> {
-                        Node node = nodesById.get(target.getNode());
-                        if (node != null && NodeType.MERGE.equals(node.getType())) {
-                            inputCounts.merge(node.getNodeId(), 1, Integer::sum);
-                        }
-                    });
-            return inputCounts;
-        }
-
-        for (Edge edge : definition.getEdges()) {
-            Node node = definition.getNodes().stream()
-                    .filter(candidate -> candidate.getNodeId().equals(edge.getTo()))
-                    .findFirst()
-                    .orElse(null);
-            if (node != null && NodeType.MERGE.equals(node.getType())) {
-                inputCounts.merge(node.getNodeId(), 1, Integer::sum);
-            }
-        }
+        definition.getConnections().values().stream()
+                .map(connections -> connections.getMain())
+                .filter(Objects::nonNull)
+                .flatMap(List::stream)
+                .filter(Objects::nonNull)
+                .flatMap(List::stream)
+                .filter(Objects::nonNull)
+                .forEach(target -> {
+                    Node node = nodesById.get(target.getNode());
+                    if (node != null && NodeType.MERGE.equals(node.getType())) {
+                        inputCounts.merge(node.getId(), 1, Integer::sum);
+                    }
+                });
         return inputCounts;
     }
 
     private List<Integer> connectedOutputs(WorkflowDefinition definition, Node node) {
         List<Integer> outputs = new ArrayList<>();
-        if (!definition.getConnections().isEmpty()) {
-            var nodeConnections = definition.getConnections().get(node.getNodeId());
-            if (nodeConnections == null || nodeConnections.getMain() == null) {
-                return outputs;
-            }
-            for (int index = 0; index < nodeConnections.getMain().size(); index++) {
-                List<?> targets = nodeConnections.getMain().get(index);
-                if (targets != null && !targets.isEmpty()) {
-                    outputs.add(index);
-                }
-            }
+        var nodeConnections = definition.getConnections().get(node.getId());
+        if (nodeConnections == null || nodeConnections.getMain() == null) {
             return outputs;
         }
-
-        if (definition.getEdges().stream().anyMatch(edge -> edge.getFrom().equals(node.getNodeId()))) {
-            outputs.add(0);
+        for (int index = 0; index < nodeConnections.getMain().size(); index++) {
+            List<?> targets = nodeConnections.getMain().get(index);
+            if (targets != null && !targets.isEmpty()) {
+                outputs.add(index);
+            }
         }
         return outputs;
     }
@@ -261,35 +247,23 @@ public class WorkflowEngine {
                                                      Map<String, Node> nodesById,
                                                      List<Integer> selectedOutputs) {
         List<OutgoingConnection> outgoing = new ArrayList<>();
-        if (!definition.getConnections().isEmpty()) {
-            var nodeConnections = definition.getConnections().get(current.getNodeId());
-            if (nodeConnections == null || nodeConnections.getMain() == null) {
-                return outgoing;
-            }
-            for (Integer outputIndex : selectedOutputs) {
-                if (outputIndex < 0 || outputIndex >= nodeConnections.getMain().size()) {
-                    continue;
-                }
-                List<com.luziatcode.demoworkflowengine.service.workflow.domain.ConnectionTarget> targets =
-                        nodeConnections.getMain().get(outputIndex);
-                if (targets == null) {
-                    continue;
-                }
-                for (var target : targets) {
-                    Node targetNode = nodesById.get(target.getNode());
-                    if (targetNode != null) {
-                        outgoing.add(new OutgoingConnection(targetNode, target.getIndex()));
-                    }
-                }
-            }
+        var nodeConnections = definition.getConnections().get(current.getId());
+        if (nodeConnections == null || nodeConnections.getMain() == null) {
             return outgoing;
         }
-
-        if (selectedOutputs.contains(0)) {
-            for (Edge edge : definition.getEdges()) {
-                if (edge.getFrom().equals(current.getNodeId())) {
-                    Node targetNode = findNode(definition, edge.getTo());
-                    outgoing.add(new OutgoingConnection(targetNode, 0));
+        for (Integer outputIndex : selectedOutputs) {
+            if (outputIndex < 0 || outputIndex >= nodeConnections.getMain().size()) {
+                continue;
+            }
+            List<NodeConnectionTarget> targets =
+                    nodeConnections.getMain().get(outputIndex);
+            if (targets == null) {
+                continue;
+            }
+            for (var target : targets) {
+                Node targetNode = nodesById.get(target.getNode());
+                if (targetNode != null) {
+                    outgoing.add(new OutgoingConnection(targetNode, target.getIndex()));
                 }
             }
         }

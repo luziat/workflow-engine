@@ -1,7 +1,7 @@
 package com.luziatcode.demoworkflowengine.controller;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.WorkflowEngine;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowDefinitionService;

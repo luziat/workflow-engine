@@ -1,6 +1,6 @@
 package com.luziatcode.demoworkflowengine.controller;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.WorkflowDefinitionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;

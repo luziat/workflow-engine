@@ -1,10 +1,10 @@
 package com.luziatcode.demoworkflowengine.service;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.ConnectionTarget;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeType;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeConnections;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.Node;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeConnectionTarget;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeOutputs;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.LoopNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.MergeNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.NoteNodeExecutor;
@@ -42,7 +42,7 @@ class WorkflowDefinitionServiceTest {
 
     @Test
     void saveAcceptsValidDefinition() {
-        WorkflowDefinition saved = service.save(definition("workflow", 1, Map.of("start", connections(target("task", 0)))));
+        WorkflowDefinition saved = service.save(definition("workflow", 1, Map.of("node_start", connections(target("node_task", 0)))));
 
         assertEquals("workflow", saved.getId());
         assertEquals(1, saved.getVersion());
@@ -53,14 +53,14 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
         definition.setVersion(1);
-        definition.setNodes(List.of(node("start", "Start", NodeType.START), node("start", "Duplicate", NodeType.GENERIC)));
+        definition.setNodes(List.of(node("node_start", "Start", NodeType.START), node("node_start", "Duplicate", NodeType.GENERIC)));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> service.save(definition)
         );
 
-        assertEquals("Duplicate node id: start", exception.getMessage());
+        assertEquals("Duplicate node id: node_start", exception.getMessage());
     }
 
     @Test
@@ -68,7 +68,7 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
         definition.setVersion(1);
-        definition.setNodes(List.of(node("task", "Task", NodeType.GENERIC)));
+        definition.setNodes(List.of(node("node_task", "Task", NodeType.GENERIC)));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
@@ -85,7 +85,7 @@ class WorkflowDefinitionServiceTest {
         definition.setVersion(1);
 
         Node start = new Node();
-        start.setNodeId("start");
+        start.setId("node_start");
         start.setName("Start");
         definition.setNodes(List.of(start));
 
@@ -94,25 +94,25 @@ class WorkflowDefinitionServiceTest {
                 () -> service.save(definition)
         );
 
-        assertEquals("Node type is required: start", exception.getMessage());
+        assertEquals("Node type is required: node_start", exception.getMessage());
     }
 
     @Test
     void saveRejectsEdgesThatReferenceUnknownNodes() {
-        WorkflowDefinition definition = definition("workflow", 1, Map.of("start", connections(target("missing", 0))));
+        WorkflowDefinition definition = definition("workflow", 1, Map.of("node_start", connections(target("node_missing", 0))));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> service.save(definition)
         );
 
-        assertEquals("Connections reference unknown target node: missing", exception.getMessage());
+        assertEquals("Connections reference unknown target node: node_missing", exception.getMessage());
     }
 
     @Test
     void getLatestReturnsHighestVersion() {
-        service.save(definition("workflow", 1, Map.of("start", connections(target("task", 0)))));
-        service.save(definition("workflow", 2, Map.of("start", connections(target("task", 0)))));
+        service.save(definition("workflow", 1, Map.of("node_start", connections(target("node_task", 0)))));
+        service.save(definition("workflow", 2, Map.of("node_start", connections(target("node_task", 0)))));
 
         WorkflowDefinition latest = service.getLatest("workflow");
 
@@ -138,7 +138,7 @@ class WorkflowDefinitionServiceTest {
     void saveDefaultsVersionToOneForN8nDefinitions() {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
-        definition.setNodes(List.of(node("start", "Start", NodeType.START)));
+        definition.setNodes(List.of(node("node_start", "Start", NodeType.START)));
 
         WorkflowDefinition saved = service.save(definition);
 
@@ -150,15 +150,15 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
         definition.setVersion(1);
-        definition.setNodes(List.of(node("start", "Start", NodeType.START), node("task", "Task", NodeType.GENERIC)));
-        definition.setConnections(Map.of("start", connections(target("missing", 0))));
+        definition.setNodes(List.of(node("node_start", "Start", NodeType.START), node("node_task", "Task", NodeType.GENERIC)));
+        definition.setConnections(Map.of("node_start", connections(target("node_missing", 0))));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> service.save(definition)
         );
 
-        assertEquals("Connections reference unknown target node: missing", exception.getMessage());
+        assertEquals("Connections reference unknown target node: node_missing", exception.getMessage());
     }
 
     @Test
@@ -166,42 +166,42 @@ class WorkflowDefinitionServiceTest {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId("workflow");
         definition.setVersion(1);
-        definition.setNodes(List.of(node("start", "Start", NodeType.START), node("task", "Task", NodeType.GENERIC)));
-        definition.setConnections(Map.of("missing", connections(target("task", 0))));
+        definition.setNodes(List.of(node("node_start", "Start", NodeType.START), node("node_task", "Task", NodeType.GENERIC)));
+        definition.setConnections(Map.of("node_missing", connections(target("node_task", 0))));
 
         IllegalArgumentException exception = assertThrows(
                 IllegalArgumentException.class,
                 () -> service.save(definition)
         );
 
-        assertEquals("Connections reference unknown source node: missing", exception.getMessage());
+        assertEquals("Connections reference unknown source node: node_missing", exception.getMessage());
     }
 
-    private static WorkflowDefinition definition(String id, int version, Map<String, NodeConnections> connections) {
+    private static WorkflowDefinition definition(String id, int version, Map<String, NodeOutputs> connections) {
         WorkflowDefinition definition = new WorkflowDefinition();
         definition.setId(id);
         definition.setVersion(version);
-        definition.setNodes(List.of(node("start", "Start", NodeType.START), node("task", "Task", NodeType.GENERIC)));
+        definition.setNodes(List.of(node("node_start", "Start", NodeType.START), node("node_task", "Task", NodeType.GENERIC)));
         definition.setConnections(connections);
         return definition;
     }
 
     private static Node node(String nodeId, String name, NodeType type) {
         Node node = new Node();
-        node.setNodeId(nodeId);
+        node.setId(nodeId);
         node.setName(name);
         node.setType(type);
         return node;
     }
 
-    private static NodeConnections connections(ConnectionTarget... targets) {
-        NodeConnections connections = new NodeConnections();
+    private static NodeOutputs connections(NodeConnectionTarget... targets) {
+        NodeOutputs connections = new NodeOutputs();
         connections.setMain(List.of(List.of(targets)));
         return connections;
     }
 
-    private static ConnectionTarget target(String nodeName, int index) {
-        ConnectionTarget target = new ConnectionTarget();
+    private static NodeConnectionTarget target(String nodeName, int index) {
+        NodeConnectionTarget target = new NodeConnectionTarget();
         target.setNode(nodeName);
         target.setType("main");
         target.setIndex(index);

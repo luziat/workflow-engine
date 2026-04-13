@@ -3,7 +3,11 @@ package com.luziatcode.demoworkflowengine.engine;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.*;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.ExecutionStatus;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.NodeExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.LoopNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.MergeNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.NoteNodeExecutor;
@@ -48,14 +52,14 @@ class WorkflowEngineTest {
                   "id": "send-email",
                   "version": 2,
                   "nodes": [
-                    { "id": "start", "name": "시작", "type": "START", "params": {} },
-                    { "id": "task", "name": "이메일 보내기", "type": "GENERIC", "params": {} }
+                    { "id": "node_start", "name": "시작", "type": "START", "params": {} },
+                    { "id": "node_send_email", "name": "이메일 보내기", "type": "GENERIC", "params": {} }
                   ],
                   "connections": {
-                    "start": {
+                    "node_start": {
                       "main": [
                         [
-                          { "node": "task", "type": "main", "index": 0 }
+                          { "node": "node_send_email", "type": "main", "index": 0 }
                         ]
                       ]
                     }
@@ -70,14 +74,14 @@ class WorkflowEngineTest {
         assertNull(result.getCurrentNodeId());
         assertEquals(true, result.getContext().get("started"));
         assertEquals("이메일 보내기", result.getContext().get("lastTask"));
-        assertEquals("task", result.getContext().get("handledBy"));
+        assertEquals("node_send_email", result.getContext().get("handledBy"));
 
         List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
         assertEquals(2, nodeExecutions.size());
         assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(0).getStatus());
         assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(1).getStatus());
-        assertEquals("start", nodeExecutions.get(0).getNodeId());
-        assertEquals("task", nodeExecutions.get(1).getNodeId());
+        assertEquals("node_start", nodeExecutions.get(0).getNodeId());
+        assertEquals("node_send_email", nodeExecutions.get(1).getNodeId());
         assertEquals("req-1", nodeExecutions.get(0).getInput().get("requestId"));
     }
 
@@ -106,14 +110,14 @@ class WorkflowEngineTest {
                   "id": "failure-workflow",
                   "version": 1,
                   "nodes": [
-                    { "id": "start", "name": "Start", "type": "START", "params": {} },
-                    { "id": "fail-node", "name": "Failure", "type": "GENERIC", "params": {} }
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_failure", "name": "Failure", "type": "GENERIC", "params": {} }
                   ],
                   "connections": {
-                    "start": {
+                    "node_start": {
                       "main": [
                         [
-                          { "node": "fail-node", "type": "main", "index": 0 }
+                          { "node": "node_failure", "type": "main", "index": 0 }
                         ]
                       ]
                     }
@@ -126,7 +130,7 @@ class WorkflowEngineTest {
 
         assertEquals(ExecutionStatus.FAILED, result.getStatus());
         assertEquals("boom", result.getFailureMessage());
-        assertEquals("fail-node", result.getCurrentNodeId());
+        assertEquals("node_failure", result.getCurrentNodeId());
 
         List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
         assertEquals(2, nodeExecutions.size());
@@ -150,39 +154,39 @@ class WorkflowEngineTest {
                   "id": "branching-workflow",
                   "version": 3,
                   "nodes": [
-                    { "id": "start", "name": "When clicking Execute workflow", "type": "START", "params": {} },
-                    { "id": "http-1", "name": "HTTP Request", "type": "HTTP", "params": { "url": "http://a.example" } },
-                    { "id": "http-2", "name": "HTTP Request 2", "type": "HTTP", "params": { "url": "http://b.example" } },
-                    { "id": "http-3", "name": "HTTP Request 3", "type": "HTTP", "params": { "url": "http://c.example" } },
-                    { "id": "merge", "name": "Merge", "type": "MERGE", "params": {} }
+                    { "id": "node_start", "name": "When clicking Execute workflow", "type": "START", "params": {} },
+                    { "id": "node_http_request_a", "name": "HTTP Request", "type": "HTTP", "params": { "url": "http://a.example" } },
+                    { "id": "node_http_request_b", "name": "HTTP Request 2", "type": "HTTP", "params": { "url": "http://b.example" } },
+                    { "id": "node_http_request_c", "name": "HTTP Request 3", "type": "HTTP", "params": { "url": "http://c.example" } },
+                    { "id": "node_merge", "name": "Merge", "type": "MERGE", "params": {} }
                   ],
                   "connections": {
-                    "start": {
+                    "node_start": {
                       "main": [
                         [
-                          { "node": "http-1", "type": "main", "index": 0 }
+                          { "node": "node_http_request_a", "type": "main", "index": 0 }
                         ]
                       ]
                     },
-                    "http-1": {
+                    "node_http_request_a": {
                       "main": [
                         [
-                          { "node": "http-2", "type": "main", "index": 0 },
-                          { "node": "http-3", "type": "main", "index": 0 }
+                          { "node": "node_http_request_b", "type": "main", "index": 0 },
+                          { "node": "node_http_request_c", "type": "main", "index": 0 }
                         ]
                       ]
                     },
-                    "http-2": {
+                    "node_http_request_b": {
                       "main": [
                         [
-                          { "node": "merge", "type": "main", "index": 0 }
+                          { "node": "node_merge", "type": "main", "index": 0 }
                         ]
                       ]
                     },
-                    "http-3": {
+                    "node_http_request_c": {
                       "main": [
                         [
-                          { "node": "merge", "type": "main", "index": 1 }
+                          { "node": "node_merge", "type": "main", "index": 1 }
                         ]
                       ]
                     }
@@ -198,7 +202,7 @@ class WorkflowEngineTest {
         assertEquals(200, result.getContext().get("httpStatus"));
         List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(execution.getExecutionId());
         assertEquals(5, nodeExecutions.size());
-        assertEquals("merge", nodeExecutions.get(4).getNodeId());
+        assertEquals("node_merge", nodeExecutions.get(4).getNodeId());
         assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(4).getStatus());
     }
 
@@ -276,22 +280,22 @@ class WorkflowEngineTest {
                   "id": "stoppable-workflow",
                   "version": 1,
                   "nodes": [
-                    { "id": "start", "name": "Start", "type": "START", "params": {} },
-                    { "id": "wait", "name": "Wait", "type": "TIMER", "params": {} },
-                    { "id": "task", "name": "Should Not Run", "type": "GENERIC", "params": {} }
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_wait", "name": "Wait", "type": "TIMER", "params": {} },
+                    { "id": "node_should_not_run", "name": "Should Not Run", "type": "GENERIC", "params": {} }
                   ],
                   "connections": {
-                    "start": {
+                    "node_start": {
                       "main": [
                         [
-                          { "node": "wait", "type": "main", "index": 0 }
+                          { "node": "node_wait", "type": "main", "index": 0 }
                         ]
                       ]
                     },
-                    "wait": {
+                    "node_wait": {
                       "main": [
                         [
-                          { "node": "task", "type": "main", "index": 0 }
+                          { "node": "node_should_not_run", "type": "main", "index": 0 }
                         ]
                       ]
                     }
@@ -303,7 +307,7 @@ class WorkflowEngineTest {
         CompletableFuture<WorkflowExecution> future = CompletableFuture.supplyAsync(() -> engine.run(execution));
 
         awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.RUNNING);
-        awaitCurrentNode(executionService, execution.getExecutionId(), "wait");
+        awaitCurrentNode(executionService, execution.getExecutionId(), "node_wait");
 
         WorkflowExecution stopping = engine.stop(execution.getExecutionId(), "manual stop");
         assertEquals(ExecutionStatus.STOPPING, stopping.getStatus());
@@ -319,7 +323,7 @@ class WorkflowEngineTest {
         assertEquals(2, nodeExecutions.size());
         assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(0).getStatus());
         assertEquals(ExecutionStatus.STOPPED, nodeExecutions.get(1).getStatus());
-        assertEquals("wait", nodeExecutions.get(1).getNodeId());
+        assertEquals("node_wait", nodeExecutions.get(1).getNodeId());
         assertEquals("manual stop", nodeExecutions.get(1).getMessage());
     }
 

@@ -1,4 +1,4 @@
-package com.luziatcode.demoworkflowengine.service.workflow.domain;
+package com.luziatcode.demoworkflowengine.service.workflow.domain.common;
 
 public enum ExecutionStatus {
     READY,
