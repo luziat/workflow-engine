@@ -1,4 +1,4 @@
-package com.luziatcode.demoworkflowengine.service;
+package com.luziatcode.demoworkflowengine.service.workflow;
 
 import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.Node;

@@ -18,4 +18,15 @@ public class AsyncExecutionConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean
+    public TaskExecutor observationTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("workflow-observation-");
+        executor.initialize();
+        return executor;
+    }
 }

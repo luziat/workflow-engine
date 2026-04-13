@@ -1,10 +1,11 @@
-package com.luziatcode.demoworkflowengine.service;
+package com.luziatcode.demoworkflowengine.service.workflow;
 
 import com.luziatcode.demoworkflowengine.service.workflow.domain.common.ExecutionStatus;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.WorkflowEngine;
+import com.luziatcode.demoworkflowengine.service.workflow.observation.ExecutionStateChangeSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +27,7 @@ public class WorkflowExecutionService {
     private final WorkflowExecutionRepository repository;
     private final WorkflowDefinitionService workflowDefinitionService;
     private final WorkflowEngine workflowEngine;
+    private final ExecutionStateChangeSupport executionStateChangeSupport;
 
     /**
      * definition id, input var 저장.
@@ -44,12 +46,11 @@ public class WorkflowExecutionService {
         execution.setCreatedAt(ZonedDateTime.now());
         execution.setUpdatedAt(ZonedDateTime.now());
 
-        return repository.save(execution);
+        return executionStateChangeSupport.saveNewWorkflowExecution(execution);
     }
 
     public WorkflowExecution update(WorkflowExecution execution) {
-        execution.setUpdatedAt(ZonedDateTime.now());
-        return repository.save(execution);
+        return executionStateChangeSupport.saveWorkflowExecution(execution);
     }
 
     public WorkflowExecution start(String workflowId, Map<String, Object> input) {
@@ -72,8 +73,7 @@ public class WorkflowExecutionService {
         if (TERMINAL_STATUSES.contains(execution.getStatus())) {
             return execution;
         }
-        execution.setStatus(ExecutionStatus.STOPPING);
         execution.setFailureMessage(null);
-        return update(execution);
+        return executionStateChangeSupport.transitionWorkflowStatus(execution, ExecutionStatus.STOPPING);
     }
 }

@@ -17,9 +17,13 @@ import com.luziatcode.demoworkflowengine.service.workflow.executor.base.SwitchNo
 import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.HttpNodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
-import com.luziatcode.demoworkflowengine.service.WorkflowDefinitionService;
-import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
+import com.luziatcode.demoworkflowengine.service.workflow.WorkflowDefinitionService;
+import com.luziatcode.demoworkflowengine.service.workflow.WorkflowExecutionService;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.*;
+import com.luziatcode.demoworkflowengine.service.workflow.observation.ExecutionObservationDispatcher;
+import com.luziatcode.demoworkflowengine.service.workflow.observation.ExecutionStateChangeSupport;
+import com.luziatcode.demoworkflowengine.service.workflow.observation.NodeExecutionListener;
+import com.luziatcode.demoworkflowengine.service.workflow.observation.WorkflowExecutionListener;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TestNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TimerNodeExecutor;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +33,10 @@ import org.springframework.core.task.SyncTaskExecutor;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -49,11 +57,19 @@ class WorkflowEngineTest {
         /* 실행 서비스 (런타임) */
         /* 엔진 */
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TestNodeExecutor()));
-        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, workflowExecutionRepository, nodeExecutionRepository, new SyncTaskExecutor());
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
+        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, workflowExecutionRepository, stateChangeSupport, new SyncTaskExecutor());
         WorkflowExecutionService executionService = workflowExecutionService(
                 workflowExecutionRepository,
                 new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
-                engine
+                engine,
+                stateChangeSupport
         );
 
         WorkflowDefinition definition = definition("""
@@ -111,16 +127,24 @@ class WorkflowEngineTest {
             }
         };
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), failingExecutor));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
         WorkflowEngine engine = new WorkflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
-                nodeExecutionRepository,
+                stateChangeSupport,
                 new SyncTaskExecutor()
         );
         WorkflowExecutionService executionService = workflowExecutionService(
                 workflowExecutionRepository,
                 new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
-                engine
+                engine,
+                stateChangeSupport
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -163,16 +187,24 @@ class WorkflowEngineTest {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor(), new MergeNodeExecutor()));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
         WorkflowEngine engine = new WorkflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
-                nodeExecutionRepository,
+                stateChangeSupport,
                 new SyncTaskExecutor()
         );
         WorkflowExecutionService executionService = workflowExecutionService(
                 workflowExecutionRepository,
                 new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
-                engine
+                engine,
+                stateChangeSupport
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -239,13 +271,25 @@ class WorkflowEngineTest {
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TimerNodeExecutor(), new TestNodeExecutor()));
         WorkflowDefinitionService definitionService =
                 new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry);
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
         WorkflowEngine engine = new WorkflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
-                nodeExecutionRepository,
+                stateChangeSupport,
                 new SimpleAsyncTaskExecutor("workflow-test-")
         );
-        WorkflowExecutionService executionService = workflowExecutionService(workflowExecutionRepository, definitionService, engine);
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                definitionService,
+                engine,
+                stateChangeSupport
+        );
         WorkflowDefinition definition = definition("""
                 {
                   "id": "async-workflow",
@@ -300,16 +344,24 @@ class WorkflowEngineTest {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new LoopNodeExecutor(), new TestNodeExecutor()));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
         WorkflowEngine engine = new WorkflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
-                nodeExecutionRepository,
+                stateChangeSupport,
                 new SyncTaskExecutor()
         );
         WorkflowExecutionService executionService = workflowExecutionService(
                 workflowExecutionRepository,
                 new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
-                engine
+                engine,
+                stateChangeSupport
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -355,7 +407,123 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("06.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
+    @DisplayName("06.observation - workflow와 node 상태 변경시 listener가 호출된다")
+    void observationNotifiesWorkflowAndNodeListeners() throws Exception {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        RecordingWorkflowExecutionListener workflowListener = new RecordingWorkflowExecutionListener(3);
+        RecordingNodeExecutionListener nodeListener = new RecordingNodeExecutionListener(4);
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(workflowListener),
+                List.of(nodeListener),
+                new SimpleAsyncTaskExecutor("observation-test-")
+        );
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TestNodeExecutor()));
+        WorkflowEngine engine = new WorkflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "observation-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_test", "name": "Observed", "type": "TEST", "params": {} }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [
+                        [
+                          { "nodeId": "node_test", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution execution = executionService.create(definition, Map.of());
+        WorkflowExecution result = engine.run(execution);
+
+        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+        assertTrue(workflowListener.await());
+        assertTrue(nodeListener.await());
+        assertEquals(Set.of("ready", "started", "completed"), Set.copyOf(workflowListener.events()));
+        assertEquals(Set.of(
+                "node_start:started",
+                "node_start:completed",
+                "node_test:started",
+                "node_test:completed"
+        ), Set.copyOf(nodeListener.events()));
+    }
+
+    @Test
+    @DisplayName("07.observation - listener 실패가 실행 흐름을 깨뜨리지 않는다")
+    void observationIgnoresListenerFailures() throws Exception {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        RecordingWorkflowExecutionListener workflowListener = new RecordingWorkflowExecutionListener(3);
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(new FailingWorkflowExecutionListener(), workflowListener),
+                List.of(),
+                new SimpleAsyncTaskExecutor("observation-failure-test-")
+        );
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TestNodeExecutor()));
+        WorkflowEngine engine = new WorkflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "observation-failure-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_test", "name": "Observed", "type": "TEST", "params": {} }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [
+                        [
+                          { "nodeId": "node_test", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution execution = executionService.create(definition, Map.of());
+        WorkflowExecution result = engine.run(execution);
+
+        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+        assertTrue(workflowListener.await());
+        assertEquals(Set.of("ready", "started", "completed"), Set.copyOf(workflowListener.events()));
+    }
+
+    @Test
+    @DisplayName("08.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
     void stopMarksExecutionStoppedAndStopsCurrentAction() throws Exception {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -371,13 +539,25 @@ class WorkflowEngineTest {
         ));
         WorkflowDefinitionService definitionService =
                 new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry);
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
         WorkflowEngine engine = new WorkflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
-                nodeExecutionRepository,
+                stateChangeSupport,
                 new SimpleAsyncTaskExecutor("workflow-stop-test-")
         );
-        WorkflowExecutionService executionService = workflowExecutionService(workflowExecutionRepository, definitionService, engine);
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                definitionService,
+                engine,
+                stateChangeSupport
+        );
         WorkflowDefinition definition = definition("""
                 {
                   "id": "stoppable-workflow",
@@ -434,8 +614,25 @@ class WorkflowEngineTest {
 
     private WorkflowExecutionService workflowExecutionService(WorkflowExecutionRepository repository,
                                                               WorkflowDefinitionService definitionService,
-                                                              WorkflowEngine engine) {
-        return new WorkflowExecutionService(repository, definitionService, engine);
+                                                              WorkflowEngine engine,
+                                                              ExecutionStateChangeSupport stateChangeSupport) {
+        return new WorkflowExecutionService(repository, definitionService, engine, stateChangeSupport);
+    }
+
+    private ExecutionStateChangeSupport stateChangeSupport(WorkflowExecutionRepository workflowExecutionRepository,
+                                                           NodeExecutionRepository nodeExecutionRepository,
+                                                           List<WorkflowExecutionListener> workflowExecutionListeners,
+                                                           List<NodeExecutionListener> nodeExecutionListeners,
+                                                           org.springframework.core.task.TaskExecutor observationTaskExecutor) {
+        return new ExecutionStateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                new ExecutionObservationDispatcher(
+                        workflowExecutionListeners,
+                        nodeExecutionListeners,
+                        observationTaskExecutor
+                )
+        );
     }
 
     private WorkflowDefinition definition(String json) {
@@ -464,5 +661,76 @@ class WorkflowEngineTest {
             Thread.sleep(10L);
         }
         throw new AssertionError("Timed out waiting for current node " + nodeId);
+    }
+
+    private static final class RecordingWorkflowExecutionListener implements WorkflowExecutionListener {
+        private final CountDownLatch latch;
+        private final List<String> events = new CopyOnWriteArrayList<>();
+
+        private RecordingWorkflowExecutionListener(int expectedEvents) {
+            this.latch = new CountDownLatch(expectedEvents);
+        }
+
+        @Override
+        public void onWorkflowReady(WorkflowExecution execution) {
+            events.add("ready");
+            latch.countDown();
+        }
+
+        @Override
+        public void onWorkflowStarted(WorkflowExecution execution) {
+            events.add("started");
+            latch.countDown();
+        }
+
+        @Override
+        public void onWorkflowCompleted(WorkflowExecution execution) {
+            events.add("completed");
+            latch.countDown();
+        }
+
+        private boolean await() throws InterruptedException {
+            return latch.await(5, TimeUnit.SECONDS);
+        }
+
+        private List<String> events() {
+            return events;
+        }
+    }
+
+    private static final class RecordingNodeExecutionListener implements NodeExecutionListener {
+        private final CountDownLatch latch;
+        private final List<String> events = new CopyOnWriteArrayList<>();
+
+        private RecordingNodeExecutionListener(int expectedEvents) {
+            this.latch = new CountDownLatch(expectedEvents);
+        }
+
+        @Override
+        public void onNodeStarted(NodeExecution nodeExecution) {
+            events.add(nodeExecution.getNodeId() + ":started");
+            latch.countDown();
+        }
+
+        @Override
+        public void onNodeCompleted(NodeExecution nodeExecution) {
+            events.add(nodeExecution.getNodeId() + ":completed");
+            latch.countDown();
+        }
+
+        private boolean await() throws InterruptedException {
+            return latch.await(5, TimeUnit.SECONDS);
+        }
+
+        private List<String> events() {
+            return events;
+        }
+    }
+
+    private static final class FailingWorkflowExecutionListener implements WorkflowExecutionListener {
+        @Override
+        public void onWorkflowStarted(WorkflowExecution execution) {
+            throw new IllegalStateException("listener failure");
+        }
     }
 }

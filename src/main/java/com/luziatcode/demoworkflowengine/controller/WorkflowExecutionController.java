@@ -1,9 +1,9 @@
 package com.luziatcode.demoworkflowengine.controller;
 
 import com.luziatcode.demoworkflowengine.dto.StopRequest;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
+import com.luziatcode.demoworkflowengine.dto.WorkflowExecutionResponse;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
-import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
+import com.luziatcode.demoworkflowengine.service.workflow.WorkflowExecutionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,23 +23,23 @@ public class WorkflowExecutionController {
     private final NodeExecutionRepository nodeExecutionRepository;
 
     @PostMapping("/{workflowId}/start")
-    public WorkflowExecution start(@PathVariable String workflowId,
-                                   @RequestBody(required = false) Map<String, Object> input) {
-        return workflowExecutionService.start(workflowId, input);
+    public WorkflowExecutionResponse start(@PathVariable String workflowId,
+                                           @RequestBody(required = false) Map<String, Object> input) {
+        return WorkflowExecutionResponse.from(workflowExecutionService.start(workflowId, input));
     }
 
     @PostMapping("/{executionId}/stop")
-    public WorkflowExecution stop(@PathVariable String executionId,
-                                  @RequestBody(required = false) StopRequest request) {
+    public WorkflowExecutionResponse stop(@PathVariable String executionId,
+                                          @RequestBody(required = false) StopRequest request) {
         String reason = request != null && request.reason() != null && !request.reason().isBlank()
                 ? request.reason()
                 : "Stopped by user request";
-        return workflowExecutionService.stop(executionId, reason);
+        return WorkflowExecutionResponse.from(workflowExecutionService.stop(executionId, reason));
     }
 
     @GetMapping("/{executionId}")
-    public WorkflowExecution get(@PathVariable String executionId) {
-        return workflowExecutionService.getRequired(executionId);
+    public WorkflowExecutionResponse get(@PathVariable String executionId) {
+        return WorkflowExecutionResponse.from(workflowExecutionService.getRequired(executionId));
     }
 
     @GetMapping("/{executionId}/nodes")

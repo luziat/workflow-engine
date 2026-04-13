@@ -8,10 +8,11 @@ import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.Work
 import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.NodeExecution;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
-import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
+import com.luziatcode.demoworkflowengine.service.workflow.observation.ExecutionStateChangeSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 
 import java.time.ZonedDateTime;
@@ -43,7 +44,7 @@ public class WorkflowEngine {
 
     private final NodeExecutorRegistry registry;
     private final WorkflowExecutionRepository workflowExecutionRepository;
-    private final NodeExecutionRepository nodeExecutionRepository;
+    private final ExecutionStateChangeSupport executionStateChangeSupport;
     private final TaskExecutor workflowTaskExecutor;
 
     public WorkflowExecution runAsync(WorkflowExecution workflowExecution) {
@@ -69,8 +70,7 @@ public class WorkflowEngine {
                     : findNode(definition, workflowExecution.getCurrentNodeId());
             readyNodes.add(startNode.getId());
 
-            workflowExecution.setStatus(ExecutionStatus.RUNNING);
-            updateExecution(workflowExecution);
+            executionStateChangeSupport.transitionWorkflowStatus(workflowExecution, ExecutionStatus.RUNNING);
 
             while (!readyNodes.isEmpty()) {
                 if (visitedCount++ >= MAX_NODE_VISITS) {
@@ -83,13 +83,13 @@ public class WorkflowEngine {
                 }
 
                 workflowExecution.setCurrentNodeId(current.getId());
-                updateExecution(workflowExecution);
+                executionStateChangeSupport.saveWorkflowExecution(workflowExecution);
 
                 if (workflowExecution.getStatus() == ExecutionStatus.STOPPING) {
                     return stopExecution(workflowExecution, nodeExecution, "Stopped before node execution");
                 }
 
-                nodeExecution = buildNodeExecution(workflowExecution, current);
+                nodeExecution = startNodeExecution(workflowExecution, current);
                 Map<String, Object> contextBeforeExecution = new LinkedHashMap<>(workflowExecution.getContext());
                 List<Integer> selectedOutputs;
                 if (current.isDisabled()) {
@@ -116,8 +116,7 @@ public class WorkflowEngine {
                     nodeExecution.setEndedAt(ZonedDateTime.now());
                 }
 
-                nodeExecution.setStatus(ExecutionStatus.SUCCESS);
-                nodeExecutionRepository.save(nodeExecution);
+                executionStateChangeSupport.transitionNodeStatus(nodeExecution, ExecutionStatus.SUCCESS);
                 nodeExecution = null;
 
                 for (OutgoingConnection outgoing : resolveOutgoing(definition, current, nodesById, selectedOutputs)) {
@@ -134,20 +133,17 @@ public class WorkflowEngine {
                 }
             }
 
-            workflowExecution.setStatus(ExecutionStatus.SUCCESS);
             workflowExecution.setCurrentNodeId(null);
-            return updateExecution(workflowExecution);
+            return executionStateChangeSupport.transitionWorkflowStatus(workflowExecution, ExecutionStatus.SUCCESS);
         } catch (Exception exception) {
             if (nodeExecution != null) {
-                nodeExecution.setStatus(ExecutionStatus.FAILED);
                 nodeExecution.setEndedAt(ZonedDateTime.now());
                 nodeExecution.setMessage(exception.getMessage());
-                nodeExecutionRepository.save(nodeExecution);
+                executionStateChangeSupport.transitionNodeStatus(nodeExecution, ExecutionStatus.FAILED);
             }
 
-            workflowExecution.setStatus(ExecutionStatus.FAILED);
             workflowExecution.setFailureMessage(exception.getMessage());
-            return updateExecution(workflowExecution);
+            return executionStateChangeSupport.transitionWorkflowStatus(workflowExecution, ExecutionStatus.FAILED);
         }
     }
 
@@ -166,14 +162,13 @@ public class WorkflowEngine {
         return getRequiredExecution(executionId);
     }
 
-    private NodeExecution buildNodeExecution(WorkflowExecution execution, Node current) {
+    private NodeExecution startNodeExecution(WorkflowExecution execution, Node current) {
         NodeExecution nodeExecution = new NodeExecution();
         nodeExecution.setExecutionId(execution.getExecutionId());
         nodeExecution.setNodeId(current.getId());
-        nodeExecution.setStatus(ExecutionStatus.RUNNING);
         nodeExecution.setStartedAt(ZonedDateTime.now());
         nodeExecution.setInput(Map.copyOf(execution.getContext()));
-        return nodeExecution;
+        return executionStateChangeSupport.startNodeExecution(nodeExecution);
     }
 
     private Map<String, Object> extractNodeOutput(Map<String, Object> before, Map<String, Object> after) {
@@ -188,16 +183,14 @@ public class WorkflowEngine {
 
     private WorkflowExecution stopExecution(WorkflowExecution workflowExecution, NodeExecution nodeExecution, String reason) {
         if (nodeExecution != null) {
-            nodeExecution.setStatus(ExecutionStatus.STOPPED);
             nodeExecution.setEndedAt(nodeExecution.getEndedAt() != null ? nodeExecution.getEndedAt() : ZonedDateTime.now());
             nodeExecution.setMessage(reason);
-            nodeExecutionRepository.save(nodeExecution);
+            executionStateChangeSupport.transitionNodeStatus(nodeExecution, ExecutionStatus.STOPPED);
         }
 
-        workflowExecution.setStatus(ExecutionStatus.STOPPED);
         workflowExecution.setCurrentNodeId(null);
         workflowExecution.setFailureMessage(reason);
-        return updateExecution(workflowExecution);
+        return executionStateChangeSupport.transitionWorkflowStatus(workflowExecution, ExecutionStatus.STOPPED);
     }
 
     private WorkflowExecution getRequiredExecution(String executionId) {
@@ -205,19 +198,13 @@ public class WorkflowEngine {
                 .orElseThrow(() -> new IllegalArgumentException("Execution not found: " + executionId));
     }
 
-    private WorkflowExecution updateExecution(WorkflowExecution execution) {
-        execution.setUpdatedAt(ZonedDateTime.now());
-        return workflowExecutionRepository.save(execution);
-    }
-
     private WorkflowExecution markStopping(String executionId) {
         WorkflowExecution execution = getRequiredExecution(executionId);
         if (TERMINAL_STATUSES.contains(execution.getStatus())) {
             return execution;
         }
-        execution.setStatus(ExecutionStatus.STOPPING);
         execution.setFailureMessage(null);
-        return updateExecution(execution);
+        return executionStateChangeSupport.transitionWorkflowStatus(execution, ExecutionStatus.STOPPING);
     }
 
     private Node findStartNode(WorkflowDefinition definition) {

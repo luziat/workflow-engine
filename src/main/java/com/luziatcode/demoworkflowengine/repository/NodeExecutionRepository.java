@@ -13,7 +13,10 @@ public class NodeExecutionRepository {
     private final Map<String, List<NodeExecution>> store = new ConcurrentHashMap<>();
 
     public NodeExecution save(NodeExecution nodeExecution) {
-        store.computeIfAbsent(nodeExecution.getExecutionId(), key -> new ArrayList<>()).add(nodeExecution);
+        List<NodeExecution> nodeExecutions = store.computeIfAbsent(nodeExecution.getExecutionId(), key -> new ArrayList<>());
+        if (!nodeExecutions.contains(nodeExecution)) {
+            nodeExecutions.add(nodeExecution);
+        }
         return nodeExecution;
     }
 
