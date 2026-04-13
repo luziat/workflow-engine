@@ -27,7 +27,7 @@ public class SwitchNodeExecutor implements NodeExecutor {
             return List.of(1);
         }
 
-        // n8n IF 노드의 조건 목록을 읽어 true/false 출력 포트를 결정한다.
+        /* IF 노드의 조건 목록을 읽어 true/false 출력 포트를 결정한다. */
         Object entriesObject = conditionsMap.get("conditions");
         if (!(entriesObject instanceof List<?> entries) || entries.isEmpty()) {
             return List.of(1);
