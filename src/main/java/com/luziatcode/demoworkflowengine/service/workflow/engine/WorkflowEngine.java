@@ -9,7 +9,7 @@ import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.NodeE
 import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
-import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
+import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.core.task.TaskExecutor;
@@ -32,17 +32,23 @@ import java.util.concurrent.atomic.AtomicReference;
 @RequiredArgsConstructor
 public class WorkflowEngine {
     private static final int MAX_NODE_VISITS = 1_000;
+    private static final Set<ExecutionStatus> TERMINAL_STATUSES = Set.of(
+            ExecutionStatus.SUCCESS,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.STOPPED,
+            ExecutionStatus.CANCELLED
+    );
 
     private final ConcurrentMap<String, ExecutionBoundNodeExecutor> activeExecutors = new ConcurrentHashMap<>();
 
     private final NodeExecutorRegistry registry;
-    private final WorkflowExecutionService workflowExecutionService;
+    private final WorkflowExecutionRepository workflowExecutionRepository;
     private final NodeExecutionRepository nodeExecutionRepository;
     private final TaskExecutor workflowTaskExecutor;
 
     public WorkflowExecution runAsync(WorkflowExecution workflowExecution) {
         workflowTaskExecutor.execute(() -> run(workflowExecution));
-        return workflowExecutionService.getRequired(workflowExecution.getExecutionId());
+        return getRequiredExecution(workflowExecution.getExecutionId());
     }
 
     public WorkflowExecution run(WorkflowExecution workflowExecution) {
@@ -64,7 +70,7 @@ public class WorkflowEngine {
             readyNodes.add(startNode.getId());
 
             workflowExecution.setStatus(ExecutionStatus.RUNNING);
-            workflowExecutionService.update(workflowExecution);
+            updateExecution(workflowExecution);
 
             while (!readyNodes.isEmpty()) {
                 if (visitedCount++ >= MAX_NODE_VISITS) {
@@ -77,7 +83,7 @@ public class WorkflowEngine {
                 }
 
                 workflowExecution.setCurrentNodeId(current.getId());
-                workflowExecutionService.update(workflowExecution);
+                updateExecution(workflowExecution);
 
                 if (workflowExecution.getStatus() == ExecutionStatus.STOPPING) {
                     return stopExecution(workflowExecution, nodeExecution, "Stopped before node execution");
@@ -130,7 +136,7 @@ public class WorkflowEngine {
 
             workflowExecution.setStatus(ExecutionStatus.SUCCESS);
             workflowExecution.setCurrentNodeId(null);
-            return workflowExecutionService.update(workflowExecution);
+            return updateExecution(workflowExecution);
         } catch (Exception exception) {
             if (nodeExecution != null) {
                 nodeExecution.setStatus(ExecutionStatus.FAILED);
@@ -141,12 +147,12 @@ public class WorkflowEngine {
 
             workflowExecution.setStatus(ExecutionStatus.FAILED);
             workflowExecution.setFailureMessage(exception.getMessage());
-            return workflowExecutionService.update(workflowExecution);
+            return updateExecution(workflowExecution);
         }
     }
 
     public WorkflowExecution stop(String executionId, String reason) {
-        WorkflowExecution execution = workflowExecutionService.markStopping(executionId);
+        WorkflowExecution execution = markStopping(executionId);
         if (execution.getStatus() != ExecutionStatus.STOPPING) {
             return execution;
         }
@@ -157,7 +163,7 @@ public class WorkflowEngine {
         }
 
         activeExecutor.stop(reason);
-        return workflowExecutionService.getRequired(executionId);
+        return getRequiredExecution(executionId);
     }
 
     private NodeExecution buildNodeExecution(WorkflowExecution execution, Node current) {
@@ -191,7 +197,27 @@ public class WorkflowEngine {
         workflowExecution.setStatus(ExecutionStatus.STOPPED);
         workflowExecution.setCurrentNodeId(null);
         workflowExecution.setFailureMessage(reason);
-        return workflowExecutionService.update(workflowExecution);
+        return updateExecution(workflowExecution);
+    }
+
+    private WorkflowExecution getRequiredExecution(String executionId) {
+        return workflowExecutionRepository.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("Execution not found: " + executionId));
+    }
+
+    private WorkflowExecution updateExecution(WorkflowExecution execution) {
+        execution.setUpdatedAt(ZonedDateTime.now());
+        return workflowExecutionRepository.save(execution);
+    }
+
+    private WorkflowExecution markStopping(String executionId) {
+        WorkflowExecution execution = getRequiredExecution(executionId);
+        if (TERMINAL_STATUSES.contains(execution.getStatus())) {
+            return execution;
+        }
+        execution.setStatus(ExecutionStatus.STOPPING);
+        execution.setFailureMessage(null);
+        return updateExecution(execution);
     }
 
     private Node findStartNode(WorkflowDefinition definition) {

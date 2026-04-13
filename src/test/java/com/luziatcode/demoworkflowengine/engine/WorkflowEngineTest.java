@@ -2,6 +2,7 @@ package com.luziatcode.demoworkflowengine.engine;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.common.ExecutionStatus;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
@@ -16,6 +17,7 @@ import com.luziatcode.demoworkflowengine.service.workflow.executor.base.SwitchNo
 import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.HttpNodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
+import com.luziatcode.demoworkflowengine.service.WorkflowDefinitionService;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.*;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TestNodeExecutor;
@@ -45,11 +47,14 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
 
         /* 실행 서비스 (런타임) */
-        WorkflowExecutionService executionService = new WorkflowExecutionService(workflowExecutionRepository);
-
         /* 엔진 */
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TestNodeExecutor()));
-        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, executionService, nodeExecutionRepository, new SyncTaskExecutor());
+        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, workflowExecutionRepository, nodeExecutionRepository, new SyncTaskExecutor());
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine
+        );
 
         WorkflowDefinition definition = definition("""
                 {
@@ -92,8 +97,8 @@ class WorkflowEngineTest {
     @Test
     @DisplayName("02.노드에서 예외발생 - 노드 실행기가 예외를 던지면 실행을 FAILED로 기록한다")
     void runMarksExecutionFailedWhenExecutorThrows() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         NodeExecutor failingExecutor = new NodeExecutor() {
             @Override
             public NodeType getType() {
@@ -105,11 +110,17 @@ class WorkflowEngineTest {
                 throw new IllegalStateException("boom");
             }
         };
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), failingExecutor));
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), failingExecutor)),
-                executionService,
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
                 nodeExecutionRepository,
                 new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -149,13 +160,19 @@ class WorkflowEngineTest {
     @Test
     @DisplayName("03.병렬과 머지 - 병렬 분기와 머지 연결을 포함한 connections를 처리한다")
     void runSupportsN8nConnectionsWithParallelBranchesAndMerge() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor(), new MergeNodeExecutor()));
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor(), new MergeNodeExecutor())),
-                executionService,
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
                 nodeExecutionRepository,
                 new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -217,14 +234,18 @@ class WorkflowEngineTest {
     @Test
     @DisplayName("04.비동기 실행 - 비동기 실행 시작은 execution을 즉시 반환하고 백그라운드에서 상태를 진행시킨다")
     void runAsyncStartsExecutionInBackground() throws Exception {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TimerNodeExecutor(), new TestNodeExecutor()));
+        WorkflowDefinitionService definitionService =
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry);
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TimerNodeExecutor(), new TestNodeExecutor())),
-                executionService,
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
                 nodeExecutionRepository,
                 new SimpleAsyncTaskExecutor("workflow-test-")
         );
+        WorkflowExecutionService executionService = workflowExecutionService(workflowExecutionRepository, definitionService, engine);
         WorkflowDefinition definition = definition("""
                 {
                   "id": "async-workflow",
@@ -252,22 +273,22 @@ class WorkflowEngineTest {
                   }
                 }
                 """);
-        WorkflowExecution execution = executionService.create(definition, Map.of());
+        definitionService.save(definition);
 
-        WorkflowExecution started = engine.runAsync(execution);
+        WorkflowExecution started = executionService.start(definition.getId(), Map.of());
 
-        assertEquals(execution.getExecutionId(), started.getExecutionId());
+        assertNotNull(started.getExecutionId());
         assertTrue(
                 List.of(ExecutionStatus.READY, ExecutionStatus.RUNNING).contains(
-                        executionService.getRequired(execution.getExecutionId()).getStatus()
+                        executionService.getRequired(started.getExecutionId()).getStatus()
                 )
         );
 
-        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.RUNNING);
-        awaitCurrentNode(executionService, execution.getExecutionId(), "node_wait");
-        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.SUCCESS);
+        awaitStatus(executionService, started.getExecutionId(), ExecutionStatus.RUNNING);
+        awaitCurrentNode(executionService, started.getExecutionId(), "node_wait");
+        awaitStatus(executionService, started.getExecutionId(), ExecutionStatus.SUCCESS);
 
-        WorkflowExecution result = executionService.getRequired(execution.getExecutionId());
+        WorkflowExecution result = executionService.getRequired(started.getExecutionId());
         assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
         assertNull(result.getCurrentNodeId());
         assertEquals("node_finish", result.getContext().get("handledBy"));
@@ -276,13 +297,19 @@ class WorkflowEngineTest {
     @Test
     @DisplayName("05.루프 분기 - items가 Iterable이면 output 0, 아니면 output 1로 진행한다")
     void loopExecutorSelectsOutputByItemsType() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new LoopNodeExecutor(), new TestNodeExecutor()));
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new LoopNodeExecutor(), new TestNodeExecutor())),
-                executionService,
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
                 nodeExecutionRepository,
                 new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine
         );
         WorkflowDefinition definition = definition("""
                 {
@@ -330,23 +357,27 @@ class WorkflowEngineTest {
     @Test
     @DisplayName("06.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
     void stopMarksExecutionStoppedAndStopsCurrentAction() throws Exception {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                new StartNodeExecutor(),
+                new TimerNodeExecutor(),
+                new TestNodeExecutor(),
+                new SwitchNodeExecutor(),
+                new HttpNodeExecutor(),
+                new MergeNodeExecutor(),
+                new LoopNodeExecutor(),
+                new NoteNodeExecutor()
+        ));
+        WorkflowDefinitionService definitionService =
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry);
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(
-                        new StartNodeExecutor(),
-                        new TimerNodeExecutor(),
-                        new TestNodeExecutor(),
-                        new SwitchNodeExecutor(),
-                        new HttpNodeExecutor(),
-                        new MergeNodeExecutor(),
-                        new LoopNodeExecutor(),
-                        new NoteNodeExecutor()
-                )),
-                executionService,
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
                 nodeExecutionRepository,
                 new SimpleAsyncTaskExecutor("workflow-stop-test-")
         );
+        WorkflowExecutionService executionService = workflowExecutionService(workflowExecutionRepository, definitionService, engine);
         WorkflowDefinition definition = definition("""
                 {
                   "id": "stoppable-workflow",
@@ -374,19 +405,19 @@ class WorkflowEngineTest {
                   }
                 }
                 """);
-        WorkflowExecution execution = executionService.create(definition, Map.of());
+        definitionService.save(definition);
 
-        WorkflowExecution started = engine.runAsync(execution);
-        assertEquals(execution.getExecutionId(), started.getExecutionId());
+        WorkflowExecution started = executionService.start(definition.getId(), Map.of());
+        assertNotNull(started.getExecutionId());
 
-        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.RUNNING);
-        awaitCurrentNode(executionService, execution.getExecutionId(), "node_wait");
+        awaitStatus(executionService, started.getExecutionId(), ExecutionStatus.RUNNING);
+        awaitCurrentNode(executionService, started.getExecutionId(), "node_wait");
 
-        WorkflowExecution stopping = engine.stop(execution.getExecutionId(), "manual stop");
+        WorkflowExecution stopping = executionService.stop(started.getExecutionId(), "manual stop");
         assertEquals(ExecutionStatus.STOPPING, stopping.getStatus());
 
-        awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.STOPPED);
-        WorkflowExecution result = executionService.getRequired(execution.getExecutionId());
+        awaitStatus(executionService, started.getExecutionId(), ExecutionStatus.STOPPED);
+        WorkflowExecution result = executionService.getRequired(started.getExecutionId());
 
         assertEquals(ExecutionStatus.STOPPED, result.getStatus());
         assertNull(result.getCurrentNodeId());
@@ -399,6 +430,12 @@ class WorkflowEngineTest {
         assertEquals(ExecutionStatus.STOPPED, nodeExecutions.get(1).getStatus());
         assertEquals("node_wait", nodeExecutions.get(1).getNodeId());
         assertEquals("manual stop", nodeExecutions.get(1).getMessage());
+    }
+
+    private WorkflowExecutionService workflowExecutionService(WorkflowExecutionRepository repository,
+                                                              WorkflowDefinitionService definitionService,
+                                                              WorkflowEngine engine) {
+        return new WorkflowExecutionService(repository, definitionService, engine);
     }
 
     private WorkflowDefinition definition(String json) {
