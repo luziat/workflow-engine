@@ -17,4 +17,5 @@ public class Node {
     private NodeType type;
     private boolean disabled;
     private Map<String, Object> params = new LinkedHashMap<>();
+    private Map<String, Object> metadata = new LinkedHashMap<>();
 }
