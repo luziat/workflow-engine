@@ -31,7 +31,7 @@ public class TimerNodeExecutor implements NodeExecutor {
     @Override
     public void execute(NodeExecutionContext context) {
         try {
-            Thread.sleep(resolveWaitMillis(context.node().getParams()));
+            Thread.sleep(resolveWaitMillis(context.resolvedParams()));
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             log.debug("Timer node interrupted. executionId={}, nodeId={}",
@@ -44,6 +44,13 @@ public class TimerNodeExecutor implements NodeExecutor {
         Object waitMillis = params.get("waitMillis");
         if (waitMillis instanceof Number number) {
             return Math.max(0L, number.longValue());
+        }
+        if (waitMillis instanceof String text) {
+            try {
+                return Math.max(0L, Long.parseLong(text));
+            } catch (NumberFormatException ignored) {
+                return DEFAULT_WAIT_MILLIS;
+            }
         }
         return DEFAULT_WAIT_MILLIS;
     }

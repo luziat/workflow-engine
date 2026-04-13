@@ -24,7 +24,7 @@ public class HttpNodeExecutor implements NodeExecutor {
 
     @Override
     public void execute(NodeExecutionContext context) {
-        String url = String.valueOf(context.node().getParams().getOrDefault("url", "about:blank"));
+        String url = String.valueOf(context.resolvedParams().getOrDefault("url", "about:blank"));
         context.execution().getContext().put("lastHttpUrl", url);
         context.execution().getContext().put("httpStatus", 200);
         context.execution().getContext().put("httpBody", "demo-response");

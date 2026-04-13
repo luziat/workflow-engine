@@ -26,7 +26,7 @@ public class TestNodeExecutor implements NodeExecutor {
     public void execute(NodeExecutionContext context) {
         String taskName = context.node().getName();
         if (taskName == null || taskName.isBlank()) {
-            taskName = String.valueOf(context.node().getParams().getOrDefault("name", context.node().getId()));
+            taskName = String.valueOf(context.resolvedParams().getOrDefault("name", context.node().getId()));
         }
         context.execution().getContext().put("lastTask", taskName);
         context.execution().getContext().put("handledBy", context.node().getId());

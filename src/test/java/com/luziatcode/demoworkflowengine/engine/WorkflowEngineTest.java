@@ -64,7 +64,12 @@ class WorkflowEngineTest {
                 List.of(),
                 new SyncTaskExecutor()
         );
-        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, workflowExecutionRepository, stateChangeSupport, new SyncTaskExecutor());
+        WorkflowEngine engine = workflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
         WorkflowExecutionService executionService = workflowExecutionService(
                 workflowExecutionRepository,
                 new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
@@ -134,7 +139,7 @@ class WorkflowEngineTest {
                 List.of(),
                 new SyncTaskExecutor()
         );
-        WorkflowEngine engine = new WorkflowEngine(
+        WorkflowEngine engine = workflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
                 stateChangeSupport,
@@ -194,7 +199,7 @@ class WorkflowEngineTest {
                 List.of(),
                 new SyncTaskExecutor()
         );
-        WorkflowEngine engine = new WorkflowEngine(
+        WorkflowEngine engine = workflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
                 stateChangeSupport,
@@ -278,7 +283,7 @@ class WorkflowEngineTest {
                 List.of(),
                 new SyncTaskExecutor()
         );
-        WorkflowEngine engine = new WorkflowEngine(
+        WorkflowEngine engine = workflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
                 stateChangeSupport,
@@ -351,7 +356,7 @@ class WorkflowEngineTest {
                 List.of(),
                 new SyncTaskExecutor()
         );
-        WorkflowEngine engine = new WorkflowEngine(
+        WorkflowEngine engine = workflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
                 stateChangeSupport,
@@ -407,7 +412,237 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("06.observation - workflow와 node 상태 변경시 listener가 호출된다")
+    @DisplayName("06.스위치 숫자비교 - 숫자 조건으로 true/false branch를 선택한다")
+    void switchExecutorSupportsNumericConditions() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new SwitchNodeExecutor(), new TestNodeExecutor()));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
+        WorkflowEngine engine = workflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "switch-number-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_switch", "name": "Switch", "type": "SWITCH", "params": {
+                      "conditions": {
+                        "conditions": [
+                          {
+                            "leftValue": "10",
+                            "rightValue": 5,
+                            "operator": { "operation": "greaterThan" }
+                          }
+                        ]
+                      }
+                    } },
+                    { "id": "node_true", "name": "True", "type": "TEST", "params": {} },
+                    { "id": "node_false", "name": "False", "type": "TEST", "params": {} }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [
+                        [
+                          { "nodeId": "node_switch", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    },
+                    "node_switch": {
+                      "main": [
+                        [
+                          { "nodeId": "node_true", "type": "main", "index": 0 }
+                        ],
+                        [
+                          { "nodeId": "node_false", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution trueResult = engine.run(executionService.create(definition, Map.of()));
+        assertEquals(ExecutionStatus.SUCCESS, trueResult.getStatus());
+        assertEquals("node_true", trueResult.getContext().get("handledBy"));
+
+        definition.getNodes().stream()
+                .filter(node -> "node_switch".equals(node.getId()))
+                .findFirst()
+                .orElseThrow()
+                .setParams(Map.of(
+                        "conditions", Map.of(
+                                "conditions", List.of(
+                                        Map.of(
+                                                "leftValue", 3,
+                                                "rightValue", "5",
+                                                "operator", Map.of("operation", "greaterThanOrEqual")
+                                        )
+                                )
+                        )
+                ));
+
+        WorkflowExecution falseResult = engine.run(executionService.create(definition, Map.of()));
+        assertEquals(ExecutionStatus.SUCCESS, falseResult.getStatus());
+        assertEquals("node_false", falseResult.getContext().get("handledBy"));
+    }
+
+    @Test
+    @DisplayName("07.변수 치환 - params 전체에서 context 값을 찾아 치환한다")
+    void resolvesTemplateVariablesAcrossNodeParams() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                new StartNodeExecutor(),
+                new HttpNodeExecutor(),
+                new TimerNodeExecutor(),
+                new SwitchNodeExecutor(),
+                new TestNodeExecutor()
+        ));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
+        WorkflowEngine engine = workflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "template-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_wait", "name": "Wait", "type": "TIMER", "params": { "waitMillis": "{{delayMillis}}" } },
+                    { "id": "node_http", "name": "HTTP", "type": "HTTP", "params": { "url": "https://api.example.com/{{request.id}}/tenants/{{tenantId}}" } },
+                    { "id": "node_switch", "name": "Switch", "type": "SWITCH", "params": {
+                      "conditions": {
+                        "conditions": [
+                          {
+                            "leftValue": "{{threshold.current}}",
+                            "rightValue": "{{threshold.minimum}}",
+                            "operator": { "operation": "greaterThan" }
+                          }
+                        ]
+                      }
+                    } },
+                    { "id": "node_done", "name": "", "type": "TEST", "params": { "name": "Task {{request.id}}" } },
+                    { "id": "node_fallback", "name": "Fallback", "type": "TEST", "params": {} }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [[{ "nodeId": "node_wait", "type": "main", "index": 0 }]]
+                    },
+                    "node_wait": {
+                      "main": [[{ "nodeId": "node_http", "type": "main", "index": 0 }]]
+                    },
+                    "node_http": {
+                      "main": [[{ "nodeId": "node_switch", "type": "main", "index": 0 }]]
+                    },
+                    "node_switch": {
+                      "main": [
+                        [{ "nodeId": "node_done", "type": "main", "index": 0 }],
+                        [{ "nodeId": "node_fallback", "type": "main", "index": 0 }]
+                      ]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution result = engine.run(executionService.create(definition, Map.of(
+                "delayMillis", "0",
+                "tenantId", "tenant-1",
+                "request", Map.of("id", "req-42"),
+                "threshold", Map.of("current", "10", "minimum", 5)
+        )));
+
+        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+        assertEquals("https://api.example.com/req-42/tenants/tenant-1", result.getContext().get("lastHttpUrl"));
+        assertEquals("Task req-42", result.getContext().get("lastTask"));
+        assertEquals("node_done", result.getContext().get("handledBy"));
+    }
+
+    @Test
+    @DisplayName("08.변수 치환 실패 - context에 없는 변수는 노드와 워크플로우를 FAILED로 만든다")
+    void failsExecutionWhenTemplateVariableIsMissing() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor()));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
+        WorkflowEngine engine = workflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "missing-template-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_http", "name": "HTTP", "type": "HTTP", "params": { "url": "https://api.example.com/{{request.id}}" } }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [[{ "nodeId": "node_http", "type": "main", "index": 0 }]]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution result = engine.run(executionService.create(definition, Map.of()));
+
+        assertEquals(ExecutionStatus.FAILED, result.getStatus());
+        assertEquals("Template variable not found: request.id", result.getFailureMessage());
+
+        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
+        assertEquals(2, nodeExecutions.size());
+        assertEquals(ExecutionStatus.FAILED, nodeExecutions.get(1).getStatus());
+        assertEquals("Template variable not found: request.id", nodeExecutions.get(1).getMessage());
+    }
+
+    @Test
+    @DisplayName("09.observation - workflow와 node 상태 변경시 listener가 호출된다")
     void observationNotifiesWorkflowAndNodeListeners() throws Exception {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -421,7 +656,7 @@ class WorkflowEngineTest {
                 new SimpleAsyncTaskExecutor("observation-test-")
         );
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TestNodeExecutor()));
-        WorkflowEngine engine = new WorkflowEngine(
+        WorkflowEngine engine = workflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
                 stateChangeSupport,
@@ -469,7 +704,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("07.observation - listener 실패가 실행 흐름을 깨뜨리지 않는다")
+    @DisplayName("10.observation - listener 실패가 실행 흐름을 깨뜨리지 않는다")
     void observationIgnoresListenerFailures() throws Exception {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -482,7 +717,7 @@ class WorkflowEngineTest {
                 new SimpleAsyncTaskExecutor("observation-failure-test-")
         );
         NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TestNodeExecutor()));
-        WorkflowEngine engine = new WorkflowEngine(
+        WorkflowEngine engine = workflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
                 stateChangeSupport,
@@ -523,7 +758,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("08.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
+    @DisplayName("11.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
     void stopMarksExecutionStoppedAndStopsCurrentAction() throws Exception {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -546,7 +781,7 @@ class WorkflowEngineTest {
                 List.of(),
                 new SyncTaskExecutor()
         );
-        WorkflowEngine engine = new WorkflowEngine(
+        WorkflowEngine engine = workflowEngine(
                 nodeExecutorRegistry,
                 workflowExecutionRepository,
                 stateChangeSupport,
@@ -617,6 +852,19 @@ class WorkflowEngineTest {
                                                               WorkflowEngine engine,
                                                               ExecutionStateChangeSupport stateChangeSupport) {
         return new WorkflowExecutionService(repository, definitionService, engine, stateChangeSupport);
+    }
+
+    private WorkflowEngine workflowEngine(NodeExecutorRegistry nodeExecutorRegistry,
+                                          WorkflowExecutionRepository workflowExecutionRepository,
+                                          ExecutionStateChangeSupport stateChangeSupport,
+                                          org.springframework.core.task.TaskExecutor workflowTaskExecutor) {
+        return new WorkflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new ContextTemplateResolver(),
+                workflowTaskExecutor
+        );
     }
 
     private ExecutionStateChangeSupport stateChangeSupport(WorkflowExecutionRepository workflowExecutionRepository,

@@ -45,6 +45,7 @@ public class WorkflowEngine {
     private final NodeExecutorRegistry registry;
     private final WorkflowExecutionRepository workflowExecutionRepository;
     private final ExecutionStateChangeSupport executionStateChangeSupport;
+    private final ContextTemplateResolver contextTemplateResolver;
     private final TaskExecutor workflowTaskExecutor;
 
     public WorkflowExecution runAsync(WorkflowExecution workflowExecution) {
@@ -95,11 +96,17 @@ public class WorkflowEngine {
                 if (current.isDisabled()) {
                     selectedOutputs = connectedOutputs(definition, current);
                 } else {
+                    Map<String, Object> resolvedParams = contextTemplateResolver.resolveParams(
+                            current.getParams(),
+                            workflowExecution.getContext()
+                    );
+                    NodeExecutionContext nodeExecutionContext =
+                            new NodeExecutionContext(definition, workflowExecution, current, resolvedParams);
                     ExecutionBoundNodeExecutor executor = new ExecutionBoundNodeExecutor(registry.getRequired(current.getType()));
                     activeExecutors.put(workflowExecution.getExecutionId(), executor);
                     try {
-                        executor.execute(new NodeExecutionContext(definition, workflowExecution, current));
-                        selectedOutputs = executor.selectOutputs(new NodeExecutionContext(definition, workflowExecution, current));
+                        executor.execute(nodeExecutionContext);
+                        selectedOutputs = executor.selectOutputs(nodeExecutionContext);
                     } finally {
                         activeExecutors.remove(workflowExecution.getExecutionId(), executor);
                     }
