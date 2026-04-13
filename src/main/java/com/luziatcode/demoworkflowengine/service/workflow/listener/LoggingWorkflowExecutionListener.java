@@ -11,39 +11,39 @@ public class LoggingWorkflowExecutionListener implements WorkflowExecutionListen
 
     @Override
     public void onWorkflowReady(WorkflowExecution execution) {
-        log.info("Workflow ready. executionId={}, definitionId={}", execution.getExecutionId(), execution.getDefinitionId());
+        log.info("Workflow ready. executionId={}, workflowId={}", execution.getExecutionId(), execution.getWorkflowId());
     }
 
     @Override
     public void onWorkflowStarted(WorkflowExecution execution) {
-        log.info("Workflow started. executionId={}, definitionId={}", execution.getExecutionId(), execution.getDefinitionId());
+        log.info("Workflow started. executionId={}, workflowId={}", execution.getExecutionId(), execution.getWorkflowId());
     }
 
     @Override
     public void onWorkflowStopping(WorkflowExecution execution) {
-        log.info("Workflow stopping. executionId={}, definitionId={}", execution.getExecutionId(), execution.getDefinitionId());
+        log.info("Workflow stopping. executionId={}, workflowId={}", execution.getExecutionId(), execution.getWorkflowId());
     }
 
     @Override
     public void onWorkflowStopped(WorkflowExecution execution) {
-        log.info("Workflow stopped. executionId={}, definitionId={}", execution.getExecutionId(), execution.getDefinitionId());
+        log.info("Workflow stopped. executionId={}, workflowId={}", execution.getExecutionId(), execution.getWorkflowId());
     }
 
     @Override
     public void onWorkflowCompleted(WorkflowExecution execution) {
-        log.info("Workflow completed. executionId={}, definitionId={}", execution.getExecutionId(), execution.getDefinitionId());
+        log.info("Workflow completed. executionId={}, workflowId={}", execution.getExecutionId(), execution.getWorkflowId());
     }
 
     @Override
     public void onWorkflowFailed(WorkflowExecution execution) {
-        log.info("Workflow failed. executionId={}, definitionId={}, message={}",
+        log.info("Workflow failed. executionId={}, workflowId={}, message={}",
                 execution.getExecutionId(),
-                execution.getDefinitionId(),
+                execution.getWorkflowId(),
                 execution.getFailureMessage());
     }
 
     @Override
     public void onWorkflowCancelled(WorkflowExecution execution) {
-        log.info("Workflow cancelled. executionId={}, definitionId={}", execution.getExecutionId(), execution.getDefinitionId());
+        log.info("Workflow cancelled. executionId={}, workflowId={}", execution.getExecutionId(), execution.getWorkflowId());
     }
 }

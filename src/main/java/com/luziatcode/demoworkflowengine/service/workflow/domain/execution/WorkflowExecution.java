@@ -15,13 +15,15 @@ import java.util.Map;
 @ToString
 public class WorkflowExecution {
     private String executionId;
-    private String definitionId;
-    private int definitionVersion;
+    private String workflowId;
+    private int workflowVersion;
     private WorkflowDefinition definition;
     private ExecutionStatus status = ExecutionStatus.READY;
     private String currentNodeId;
     private ZonedDateTime createdAt = ZonedDateTime.now();
+    private ZonedDateTime startedAt;
     private ZonedDateTime updatedAt = ZonedDateTime.now();
+    private ZonedDateTime endedAt;
     private String failureMessage;
     private Map<String, Object> context = new LinkedHashMap<>();
 

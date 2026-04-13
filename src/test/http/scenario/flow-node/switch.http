@@ -1,0 +1,123 @@
+@baseUrl = http://localhost:8080
+@workflowId = flow-switch-workflow
+
+### 1. SWITCH 노드 중심 워크플로우 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Switch Flow Runtime Test",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_switch",
+      "name": "Switch",
+      "type": "SWITCH",
+      "params": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "<<threshold.current>>",
+              "rightValue": "<<threshold.minimum>>",
+              "operator": {
+                "operation": "greaterThan"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node_true",
+      "name": "True Branch",
+      "type": "END",
+      "params": {
+        "name": "Switch true branch"
+      }
+    },
+    {
+      "id": "node_false",
+      "name": "False Branch",
+      "type": "END",
+      "params": {
+        "name": "Switch false branch"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_switch": {
+      "main": [
+        [
+          {
+            "nodeId": "node_true",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "nodeId": "node_false",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. true branch 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "threshold": {
+    "current": 10,
+    "minimum": 5
+  }
+}
+
+> {% client.global.set("switchTrueExecutionId", response.body.executionId); %}
+
+### 3. true branch 상태 조회
+GET {{baseUrl}}/api/executions/{{switchTrueExecutionId}}
+
+### 4. true branch 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{switchTrueExecutionId}}/nodes
+
+### 5. false branch 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "threshold": {
+    "current": 3,
+    "minimum": 5
+  }
+}
+
+> {% client.global.set("switchFalseExecutionId", response.body.executionId); %}
+
+### 6. false branch 상태 조회
+GET {{baseUrl}}/api/executions/{{switchFalseExecutionId}}
+
+### 7. false branch 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{switchFalseExecutionId}}/nodes

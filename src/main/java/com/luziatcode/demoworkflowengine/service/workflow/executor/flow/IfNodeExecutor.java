@@ -4,7 +4,7 @@ import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType
 import org.springframework.stereotype.Component;
 
 /**
- * 조건 목록을 평가하여 true/false output branch 를 선택하는 executor.
+ * IF 조건을 평가하여 true/false output branch 를 선택하는 executor.
  *
  * <p>지원 연산:
  * <ul>
@@ -16,33 +16,16 @@ import org.springframework.stereotype.Component;
  *   <li>{@code lessThanOrEqual}</li>
  * </ul>
  *
- * <p>문자열 비교 params 예시:
+ * <p>params 예시:
  * <pre>{@code
  * {
  *   "conditions": {
  *     "conditions": [
  *       {
- *         "leftValue": "approved",
- *         "rightValue": "approved",
+ *         "leftValue": "<<order.totalAmount>>",
+ *         "rightValue": 10000,
  *         "operator": {
- *           "operation": "equals"
- *         }
- *       }
- *     ]
- *   }
- * }
- * }</pre>
- *
- * <p>숫자 비교 params 예시:
- * <pre>{@code
- * {
- *   "conditions": {
- *     "conditions": [
- *       {
- *         "leftValue": "10",
- *         "rightValue": 5,
- *         "operator": {
- *           "operation": "greaterThan"
+ *           "operation": "greaterThanOrEqual"
  *         }
  *       }
  *     ]
@@ -51,9 +34,9 @@ import org.springframework.stereotype.Component;
  * }</pre>
  */
 @Component
-public class SwitchNodeExecutor extends ConditionalBranchNodeExecutor {
+public class IfNodeExecutor extends ConditionalBranchNodeExecutor {
     @Override
     public NodeType getType() {
-        return NodeType.SWITCH;
+        return NodeType.IF;
     }
 }

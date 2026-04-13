@@ -6,20 +6,20 @@ import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import org.springframework.stereotype.Component;
 
 /**
- * 테스트용 작업 노드로 마지막 실행 태스크 이름과 처리 노드 id 를 context 에 기록한다.
+ * 테스트용 종료 노드로 마지막 실행 태스크 이름과 처리 노드 id 를 context 에 기록한다.
  *
  * <p>params 예시:
  * <pre>{@code
  * {
- *   "name": "Runtime Test Task"
+ *   "name": "Runtime End Task"
  * }
  * }</pre>
  */
 @Component
-public class TestNodeExecutor implements NodeExecutor {
+public class EndNodeExecutor implements NodeExecutor {
     @Override
     public NodeType getType() {
-        return NodeType.TEST;
+        return NodeType.END;
     }
 
     @Override

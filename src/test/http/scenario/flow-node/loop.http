@@ -1,0 +1,105 @@
+@baseUrl = http://localhost:8080
+@workflowId = flow-loop-workflow
+
+### 1. LOOP 노드 중심 워크플로우 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Loop Flow Runtime Test",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_loop",
+      "name": "Loop",
+      "type": "LOOP",
+      "params": {}
+    },
+    {
+      "id": "node_loop_body",
+      "name": "Loop Body",
+      "type": "END",
+      "params": {
+        "name": "Loop body branch"
+      }
+    },
+    {
+      "id": "node_loop_done",
+      "name": "Loop Done",
+      "type": "END",
+      "params": {
+        "name": "Loop done branch"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_loop": {
+      "main": [
+        [
+          {
+            "nodeId": "node_loop_body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "nodeId": "node_loop_done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. iterable input 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "items": ["a", "b", "c"]
+}
+
+> {% client.global.set("loopIterableExecutionId", response.body.executionId); %}
+
+### 3. iterable input 상태 조회
+GET {{baseUrl}}/api/executions/{{loopIterableExecutionId}}
+
+### 4. iterable input 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{loopIterableExecutionId}}/nodes
+
+### 5. scalar input 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "items": "not-iterable"
+}
+
+> {% client.global.set("loopScalarExecutionId", response.body.executionId); %}
+
+### 6. scalar input 상태 조회
+GET {{baseUrl}}/api/executions/{{loopScalarExecutionId}}
+
+### 7. scalar input 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{loopScalarExecutionId}}/nodes

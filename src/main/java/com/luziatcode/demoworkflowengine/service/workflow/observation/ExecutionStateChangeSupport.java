@@ -9,10 +9,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.ZonedDateTime;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
 public class ExecutionStateChangeSupport {
+    private static final Set<ExecutionStatus> TERMINAL_STATUSES = Set.of(
+            ExecutionStatus.SUCCESS,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.STOPPED,
+            ExecutionStatus.CANCELLED
+    );
+
     private final WorkflowExecutionRepository workflowExecutionRepository;
     private final NodeExecutionRepository nodeExecutionRepository;
     private final ExecutionObservationDispatcher observationDispatcher;
@@ -42,6 +50,14 @@ public class ExecutionStateChangeSupport {
         ExecutionStatus previous = execution.getStatus();
         execution.setStatus(status);
         execution.setUpdatedAt(ZonedDateTime.now());
+        if (ExecutionStatus.RUNNING.equals(status) && execution.getStartedAt() == null) {
+            execution.setStartedAt(ZonedDateTime.now());
+        }
+        if (TERMINAL_STATUSES.contains(status)) {
+            execution.setEndedAt(ZonedDateTime.now());
+        } else {
+            execution.setEndedAt(null);
+        }
         WorkflowExecution saved = workflowExecutionRepository.save(execution);
         if (previous != status) {
             observationDispatcher.dispatchWorkflow(status, saved);

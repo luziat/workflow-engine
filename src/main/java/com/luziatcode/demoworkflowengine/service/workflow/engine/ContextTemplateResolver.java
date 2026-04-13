@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 
 @Component
 public class ContextTemplateResolver {
-    private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{\\{\\s*([^{}]+?)\\s*}}");
+    private static final Pattern TEMPLATE_PATTERN = Pattern.compile("<<\\s*([^<>]+?)\\s*>>");
 
     public Map<String, Object> resolveParams(Map<String, Object> params, Map<String, Object> context) {
         Map<String, Object> resolved = new LinkedHashMap<>();

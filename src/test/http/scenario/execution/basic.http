@@ -19,7 +19,7 @@ Content-Type: application/json
     {
       "id": "node_test",
       "name": "Test Task",
-      "type": "TEST",
+      "type": "END",
       "params": {
         "name": "Runtime Test Task"
       }

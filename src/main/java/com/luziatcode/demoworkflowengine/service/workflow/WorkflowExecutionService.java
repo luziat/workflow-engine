@@ -30,7 +30,7 @@ public class WorkflowExecutionService {
     private final ExecutionStateChangeSupport executionStateChangeSupport;
 
     /**
-     * definition id, input var 저장.
+     * workflow id/version, input var 저장.
      */
     public WorkflowExecution create(WorkflowDefinition definition, Map<String, Object> initContext) {
         WorkflowExecution execution = new WorkflowExecution();
@@ -39,10 +39,9 @@ public class WorkflowExecutionService {
         execution.setStatus(ExecutionStatus.READY);
         execution.setContext(initContext);
 
-        execution.setDefinitionId(definition.getId());
-        execution.setDefinitionVersion(definition.getVersion());
+        execution.setWorkflowId(definition.getId());
+        execution.setWorkflowVersion(definition.getVersion());
         execution.setDefinition(definition);
-
         execution.setCreatedAt(ZonedDateTime.now());
         execution.setUpdatedAt(ZonedDateTime.now());
 
