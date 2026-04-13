@@ -13,12 +13,12 @@ import com.luziatcode.demoworkflowengine.service.workflow.executor.base.MergeNod
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.NoteNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.StartNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.base.SwitchNodeExecutor;
-import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.GenericNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.HttpNodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.*;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TestNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TimerNodeExecutor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,7 +38,7 @@ class WorkflowEngineTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    @DisplayName("선형 워크플로우를 실행하고 노드 실행 이력을 저장한다")
+    @DisplayName("01.기본 실행 - 선형 워크플로우를 실행하고 노드 실행 이력을 저장한다")
     void runCompletesLinearWorkflowAndPersistsNodeExecutions() {
         /* 저장소 */
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
@@ -48,7 +48,7 @@ class WorkflowEngineTest {
         WorkflowExecutionService executionService = new WorkflowExecutionService(workflowExecutionRepository);
 
         /* 엔진 */
-        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new GenericNodeExecutor()));
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TestNodeExecutor()));
         WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, executionService, nodeExecutionRepository, new SyncTaskExecutor());
 
         WorkflowDefinition definition = definition("""
@@ -57,13 +57,13 @@ class WorkflowEngineTest {
                   "version": 2,
                   "nodes": [
                     { "id": "node_start", "name": "시작", "type": "START", "params": {} },
-                    { "id": "node_send_email", "name": "이메일 보내기", "type": "GENERIC", "params": {} }
+                    { "id": "node_send_email", "name": "이메일 보내기", "type": "TEST", "params": {} }
                   ],
                   "connections": {
                     "node_start": {
                       "main": [
                         [
-                          { "node": "node_send_email", "type": "main", "index": 0 }
+                          { "nodeId": "node_send_email", "type": "main", "index": 0 }
                         ]
                       ]
                     }
@@ -90,14 +90,14 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("노드 실행기가 예외를 던지면 실행을 FAILED로 기록한다")
+    @DisplayName("02.노드에서 예외발생 - 노드 실행기가 예외를 던지면 실행을 FAILED로 기록한다")
     void runMarksExecutionFailedWhenExecutorThrows() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         NodeExecutor failingExecutor = new NodeExecutor() {
             @Override
             public NodeType getType() {
-                return NodeType.GENERIC;
+                return NodeType.TEST;
             }
 
             @Override
@@ -117,13 +117,13 @@ class WorkflowEngineTest {
                   "version": 1,
                   "nodes": [
                     { "id": "node_start", "name": "Start", "type": "START", "params": {} },
-                    { "id": "node_failure", "name": "Failure", "type": "GENERIC", "params": {} }
+                    { "id": "node_failure", "name": "Failure", "type": "TEST", "params": {} }
                   ],
                   "connections": {
                     "node_start": {
                       "main": [
                         [
-                          { "node": "node_failure", "type": "main", "index": 0 }
+                          { "nodeId": "node_failure", "type": "main", "index": 0 }
                         ]
                       ]
                     }
@@ -147,7 +147,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("병렬 분기와 머지 연결을 포함한 connections를 처리한다")
+    @DisplayName("03.병렬과 머지 - 병렬 분기와 머지 연결을 포함한 connections를 처리한다")
     void runSupportsN8nConnectionsWithParallelBranchesAndMerge() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
@@ -172,29 +172,29 @@ class WorkflowEngineTest {
                     "node_start": {
                       "main": [
                         [
-                          { "node": "node_http_request_a", "type": "main", "index": 0 }
+                          { "nodeId": "node_http_request_a", "type": "main", "index": 0 }
                         ]
                       ]
                     },
                     "node_http_request_a": {
                       "main": [
                         [
-                          { "node": "node_http_request_b", "type": "main", "index": 0 },
-                          { "node": "node_http_request_c", "type": "main", "index": 0 }
+                          { "nodeId": "node_http_request_b", "type": "main", "index": 0 },
+                          { "nodeId": "node_http_request_c", "type": "main", "index": 0 }
                         ]
                       ]
                     },
                     "node_http_request_b": {
                       "main": [
                         [
-                          { "node": "node_merge", "type": "main", "index": 0 }
+                          { "nodeId": "node_merge", "type": "main", "index": 0 }
                         ]
                       ]
                     },
                     "node_http_request_c": {
                       "main": [
                         [
-                          { "node": "node_merge", "type": "main", "index": 1 }
+                          { "nodeId": "node_merge", "type": "main", "index": 1 }
                         ]
                       ]
                     }
@@ -215,12 +215,12 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("비동기 실행 시작은 execution을 즉시 반환하고 백그라운드에서 상태를 진행시킨다")
+    @DisplayName("04.비동기 실행 - 비동기 실행 시작은 execution을 즉시 반환하고 백그라운드에서 상태를 진행시킨다")
     void runAsyncStartsExecutionInBackground() throws Exception {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TimerNodeExecutor(), new GenericNodeExecutor())),
+                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new TimerNodeExecutor(), new TestNodeExecutor())),
                 executionService,
                 nodeExecutionRepository,
                 new SimpleAsyncTaskExecutor("workflow-test-")
@@ -232,20 +232,20 @@ class WorkflowEngineTest {
                   "nodes": [
                     { "id": "node_start", "name": "Start", "type": "START", "params": {} },
                     { "id": "node_wait", "name": "Wait", "type": "TIMER", "params": {} },
-                    { "id": "node_finish", "name": "Finish", "type": "GENERIC", "params": {} }
+                    { "id": "node_finish", "name": "Finish", "type": "TEST", "params": {} }
                   ],
                   "connections": {
                     "node_start": {
                       "main": [
                         [
-                          { "node": "node_wait", "type": "main", "index": 0 }
+                          { "nodeId": "node_wait", "type": "main", "index": 0 }
                         ]
                       ]
                     },
                     "node_wait": {
                       "main": [
                         [
-                          { "node": "node_finish", "type": "main", "index": 0 }
+                          { "nodeId": "node_finish", "type": "main", "index": 0 }
                         ]
                       ]
                     }
@@ -274,38 +274,41 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("workflow JSON을 NodeType 기반 정의로 역직렬화한다")
-    void parsesActionTypeWorkflowJson() {
+    @DisplayName("05.루프 분기 - items가 Iterable이면 output 0, 아니면 output 1로 진행한다")
+    void loopExecutorSelectsOutputByItemsType() {
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
+        WorkflowEngine engine = new WorkflowEngine(
+                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new LoopNodeExecutor(), new TestNodeExecutor())),
+                executionService,
+                nodeExecutionRepository,
+                new SyncTaskExecutor()
+        );
         WorkflowDefinition definition = definition("""
                 {
-                  "id": "8hKbtk3KW6TrsrH9",
-                  "name": "My workflow",
+                  "id": "loop-workflow",
+                  "version": 1,
                   "nodes": [
-                    {
-                      "params": {},
-                      "type": "START",
-                      "id": "acfabc3b-211e-40b7-a7c4-8f5c14b18338",
-                      "name": "When clicking Execute workflow"
-                    },
-                    {
-                      "params": {
-                        "url": "http://www.naver.com",
-                        "options": {}
-                      },
-                      "type": "HTTP",
-                      "id": "07ff0d27-5843-4db9-bd0d-dbb88f5163a3",
-                      "name": "HTTP Request"
-                    }
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_loop", "name": "Loop", "type": "LOOP", "params": {} },
+                    { "id": "node_loop_body", "name": "Loop Body", "type": "TEST", "params": {} },
+                    { "id": "node_loop_done", "name": "Loop Done", "type": "TEST", "params": {} }
                   ],
                   "connections": {
-                    "acfabc3b-211e-40b7-a7c4-8f5c14b18338": {
+                    "node_start": {
                       "main": [
                         [
-                          {
-                            "node": "07ff0d27-5843-4db9-bd0d-dbb88f5163a3",
-                            "type": "main",
-                            "index": 0
-                          }
+                          { "nodeId": "node_loop", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    },
+                    "node_loop": {
+                      "main": [
+                        [
+                          { "nodeId": "node_loop_body", "type": "main", "index": 0 }
+                        ],
+                        [
+                          { "nodeId": "node_loop_done", "type": "main", "index": 0 }
                         ]
                       ]
                     }
@@ -313,20 +316,19 @@ class WorkflowEngineTest {
                 }
                 """);
 
-        assertEquals("8hKbtk3KW6TrsrH9", definition.getId());
-        assertEquals("My workflow", definition.getName());
-        assertEquals(NodeType.START, definition.getNodes().get(0).getType());
-        assertEquals(NodeType.HTTP, definition.getNodes().get(1).getType());
-        assertEquals("07ff0d27-5843-4db9-bd0d-dbb88f5163a3", definition.getConnections()
-                .get("acfabc3b-211e-40b7-a7c4-8f5c14b18338")
-                .getMain()
-                .getFirst()
-                .getFirst()
-                .getNode());
+        WorkflowExecution iterableExecution = executionService.create(definition, Map.of("items", List.of("a", "b")));
+        WorkflowExecution iterableResult = engine.run(iterableExecution);
+        assertEquals(ExecutionStatus.SUCCESS, iterableResult.getStatus());
+        assertEquals("node_loop_body", iterableResult.getContext().get("handledBy"));
+
+        WorkflowExecution scalarExecution = executionService.create(definition, Map.of("items", "not-iterable"));
+        WorkflowExecution scalarResult = engine.run(scalarExecution);
+        assertEquals(ExecutionStatus.SUCCESS, scalarResult.getStatus());
+        assertEquals("node_loop_done", scalarResult.getContext().get("handledBy"));
     }
 
     @Test
-    @DisplayName("중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
+    @DisplayName("06.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
     void stopMarksExecutionStoppedAndStopsCurrentAction() throws Exception {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
@@ -334,7 +336,7 @@ class WorkflowEngineTest {
                 new NodeExecutorRegistry(List.of(
                         new StartNodeExecutor(),
                         new TimerNodeExecutor(),
-                        new GenericNodeExecutor(),
+                        new TestNodeExecutor(),
                         new SwitchNodeExecutor(),
                         new HttpNodeExecutor(),
                         new MergeNodeExecutor(),
@@ -352,20 +354,20 @@ class WorkflowEngineTest {
                   "nodes": [
                     { "id": "node_start", "name": "Start", "type": "START", "params": {} },
                     { "id": "node_wait", "name": "Wait", "type": "TIMER", "params": {} },
-                    { "id": "node_should_not_run", "name": "Should Not Run", "type": "GENERIC", "params": {} }
+                    { "id": "node_should_not_run", "name": "Should Not Run", "type": "TEST", "params": {} }
                   ],
                   "connections": {
                     "node_start": {
                       "main": [
                         [
-                          { "node": "node_wait", "type": "main", "index": 0 }
+                          { "nodeId": "node_wait", "type": "main", "index": 0 }
                         ]
                       ]
                     },
                     "node_wait": {
                       "main": [
                         [
-                          { "node": "node_should_not_run", "type": "main", "index": 0 }
+                          { "nodeId": "node_should_not_run", "type": "main", "index": 0 }
                         ]
                       ]
                     }

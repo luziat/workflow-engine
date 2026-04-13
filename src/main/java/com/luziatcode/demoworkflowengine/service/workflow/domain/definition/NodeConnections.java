@@ -10,6 +10,6 @@ import java.util.List;
 @Getter
 @Setter
 @ToString
-public class NodeOutputs {
+public class NodeConnections {
     private List<List<NodeConnectionTarget>> main = new ArrayList<>();
 }

@@ -6,10 +6,10 @@ import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import org.springframework.stereotype.Component;
 
 @Component
-public class GenericNodeExecutor implements NodeExecutor {
+public class TestNodeExecutor implements NodeExecutor {
     @Override
     public NodeType getType() {
-        return NodeType.GENERIC;
+        return NodeType.TEST;
     }
 
     @Override

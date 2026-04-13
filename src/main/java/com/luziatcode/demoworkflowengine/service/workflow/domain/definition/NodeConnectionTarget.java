@@ -8,7 +8,7 @@ import lombok.ToString;
 @Setter
 @ToString
 public class NodeConnectionTarget {
-    private String node;
+    private String nodeId;
     private String type;
     private int index;
 }

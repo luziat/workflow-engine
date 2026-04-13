@@ -226,7 +226,7 @@ public class WorkflowEngine {
                 .flatMap(List::stream)
                 .filter(Objects::nonNull)
                 .forEach(target -> {
-                    Node node = nodesById.get(target.getNode());
+                    Node node = nodesById.get(target.getNodeId());
                     if (node != null && NodeType.MERGE.equals(node.getType())) {
                         inputCounts.merge(node.getId(), 1, Integer::sum);
                     }
@@ -268,7 +268,7 @@ public class WorkflowEngine {
                 continue;
             }
             for (var target : targets) {
-                Node targetNode = nodesById.get(target.getNode());
+                Node targetNode = nodesById.get(target.getNodeId());
                 if (targetNode != null) {
                     outgoing.add(new OutgoingConnection(targetNode, target.getIndex()));
                 }

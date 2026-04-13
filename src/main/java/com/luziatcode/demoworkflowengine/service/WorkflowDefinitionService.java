@@ -3,7 +3,7 @@ package com.luziatcode.demoworkflowengine.service;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.Node;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeConnectionTarget;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeOutputs;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeConnections;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutorRegistry;
 import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
@@ -77,7 +77,7 @@ public class WorkflowDefinitionService {
         }
     }
 
-    private void validateConnections(Set<String> nodeIds, NodeOutputs connections) {
+    private void validateConnections(Set<String> nodeIds, NodeConnections connections) {
         if (connections == null || connections.getMain() == null) {
             return;
         }
@@ -89,8 +89,8 @@ public class WorkflowDefinitionService {
                 if (target == null) {
                     continue;
                 }
-                if (!nodeIds.contains(target.getNode())) {
-                    throw new IllegalArgumentException("Connections reference unknown target node: " + target.getNode());
+                if (!nodeIds.contains(target.getNodeId())) {
+                    throw new IllegalArgumentException("Connections reference unknown target node: " + target.getNodeId());
                 }
             }
         }

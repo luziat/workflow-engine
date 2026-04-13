@@ -9,7 +9,7 @@ public enum NodeType {
     NOTE,
 
     /* 커스텀 노드 */
-    GENERIC,
+    TEST,
     TIMER,
     HTTP
 }

@@ -17,5 +17,5 @@ public class WorkflowDefinition {
     private String name;
     private int version;
     private List<Node> nodes = new ArrayList<>();
-    private Map<String, NodeOutputs> connections = new LinkedHashMap<>();
+    private Map<String, NodeConnections> connections = new LinkedHashMap<>();
 }

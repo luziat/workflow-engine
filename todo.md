@@ -1,10 +1,3 @@
-
-- [ ] execute() 비동기 외부 트리거 API
-- [ ] Workflow Stop / Cancel API
-- [ ] node output 데이터의 쓰임 파악
-
-
-
 # Engine
 
 ## Definition
@@ -13,20 +6,18 @@
 ## Execution
 - [x] run, stop
 - [x] 동기 실행
+- [x] 다중 흐름 관리 (parallel, merge)
 - [ ] 비동기 노드 트리거
-- [ ] 다중 흐름 관리
 
 ## Flow Node
-- [ ] IF
-- [ ] SWITCH
-- [ ] MERGE
-- [ ] 
+- [x] START
+- [x] SWITCH / IF
+- [x] MERGE
+- [x] LOOP
+- [x] NOTE
 
 ## Observation
 - [ ] listener
-
-## refactoring
-- [ ] Abstract Action
 
 
 # Extension
@@ -45,5 +36,5 @@
   - mcp
   - output parser
 
-- [ ] message
+- [ ] channel
   - Teams
