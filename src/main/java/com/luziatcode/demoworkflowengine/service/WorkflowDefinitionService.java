@@ -1,23 +1,29 @@
 package com.luziatcode.demoworkflowengine.service;
 
+import com.luziatcode.demoworkflowengine.service.workflow.domain.ConnectionTarget;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.Edge;
-import com.luziatcode.demoworkflowengine.service.workflow.domain.ActionType;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.Node;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeConnections;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeType;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.WorkflowDefinition;
+import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutorRegistry;
 import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class WorkflowDefinitionService {
     private final WorkflowDefinitionRepository repository;
+    private final NodeExecutorRegistry nodeExecutorRegistry;
 
     public WorkflowDefinition save(WorkflowDefinition definition) {
+        if (definition.getVersion() <= 0) {
+            definition.setVersion(1);
+        }
         validate(definition);
         return repository.save(definition);
     }
@@ -50,15 +56,49 @@ public class WorkflowDefinitionService {
             if (!nodeIds.add(node.getNodeId())) {
                 throw new IllegalArgumentException("Duplicate node id: " + node.getNodeId());
             }
+            if (node.getName() == null || node.getName().isBlank()) {
+                throw new IllegalArgumentException("Node name is required");
+            }
+            if (node.getType() == null) {
+                throw new IllegalArgumentException("Node type is required: " + node.getNodeId());
+            }
+            if (!nodeExecutorRegistry.supportedTypes().contains(node.getType())) {
+                throw new IllegalArgumentException("Unsupported node type: " + node.getType());
+            }
         }
         for (Edge edge : definition.getEdges()) {
             if (!nodeIds.contains(edge.getFrom()) || !nodeIds.contains(edge.getTo())) {
                 throw new IllegalArgumentException("Edge references unknown node: " + edge.getFrom() + " -> " + edge.getTo());
             }
         }
-        long startCount = definition.getNodes().stream().filter(node -> ActionType.START.equals(node.getActionType())).count();
+        for (var entry : definition.getConnections().entrySet()) {
+            if (!nodeIds.contains(entry.getKey())) {
+                throw new IllegalArgumentException("Connections reference unknown source node: " + entry.getKey());
+            }
+            validateConnections(nodeIds, entry.getValue());
+        }
+        long startCount = definition.getNodes().stream().filter(node -> NodeType.START.equals(node.getType())).count();
         if (startCount != 1) {
             throw new IllegalArgumentException("Exactly one start node is required");
+        }
+    }
+
+    private void validateConnections(Set<String> nodeIds, NodeConnections connections) {
+        if (connections == null || connections.getMain() == null) {
+            return;
+        }
+        for (var output : connections.getMain()) {
+            if (output == null) {
+                continue;
+            }
+            for (ConnectionTarget target : output) {
+                if (target == null) {
+                    continue;
+                }
+                if (!nodeIds.contains(target.getNode())) {
+                    throw new IllegalArgumentException("Connections reference unknown target node: " + target.getNode());
+                }
+            }
         }
     }
 }

@@ -7,7 +7,7 @@ import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -25,20 +25,28 @@ public class WorkflowExecutionService {
 
     private final WorkflowExecutionRepository repository;
 
-    public WorkflowExecution create(WorkflowDefinition definition, Map<String, Object> input) {
+    /**
+     * definition id, input var 저장.
+     */
+    public WorkflowExecution create(WorkflowDefinition definition, Map<String, Object> initContext) {
         WorkflowExecution execution = new WorkflowExecution();
+
         execution.setExecutionId(UUID.randomUUID().toString());
-        execution.setWorkflowId(definition.getId());
-        execution.setWorkflowVersion(definition.getVersion());
         execution.setStatus(ExecutionStatus.READY);
-        execution.setCreatedAt(Instant.now());
-        execution.setUpdatedAt(Instant.now());
-        execution.setContext(input != null ? new LinkedHashMap<>(input) : new LinkedHashMap<>());
+        execution.setContext(initContext);
+
+        execution.setDefinitionId(definition.getId());
+        execution.setDefinitionVersion(definition.getVersion());
+        execution.setDefinition(definition);
+
+        execution.setCreatedAt(ZonedDateTime.now());
+        execution.setUpdatedAt(ZonedDateTime.now());
+
         return repository.save(execution);
     }
 
     public WorkflowExecution update(WorkflowExecution execution) {
-        execution.setUpdatedAt(Instant.now());
+        execution.setUpdatedAt(ZonedDateTime.now());
         return repository.save(execution);
     }
 

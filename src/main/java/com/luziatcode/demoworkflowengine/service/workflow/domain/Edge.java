@@ -13,5 +13,4 @@ public class Edge {
     private String edgeId;
     private String from;
     private String to;
-    private String condition;
 }

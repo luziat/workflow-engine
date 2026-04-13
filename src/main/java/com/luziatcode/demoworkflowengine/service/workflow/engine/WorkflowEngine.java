@@ -1,17 +1,22 @@
 package com.luziatcode.demoworkflowengine.service.workflow.engine;
 
 import com.luziatcode.demoworkflowengine.service.workflow.domain.*;
-import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -19,24 +24,45 @@ import java.util.concurrent.atomic.AtomicReference;
 @Component
 @RequiredArgsConstructor
 public class WorkflowEngine {
-    private final ConcurrentMap<String, ExecutionBoundAction> activeActions = new ConcurrentHashMap<>();
+    private static final int MAX_NODE_VISITS = 1_000;
+
+    private final ConcurrentMap<String, ExecutionBoundNodeExecutor> activeExecutors = new ConcurrentHashMap<>();
 
     private final NodeExecutorRegistry registry;
     private final WorkflowExecutionService workflowExecutionService;
     private final NodeExecutionRepository nodeExecutionRepository;
-    private final SimpleConditionEvaluator conditionEvaluator;
 
-    public WorkflowExecution run(WorkflowDefinition definition, WorkflowExecution workflowExecution) {
+    public WorkflowExecution run(WorkflowExecution workflowExecution) {
+        WorkflowDefinition definition = workflowExecution.getDefinition();
+        if (definition == null) {
+            throw new IllegalArgumentException("Workflow definition not found in execution");
+        }
         NodeExecution nodeExecution = null;
         try {
-            Node current = workflowExecution.getCurrentNodeId() == null
+            ArrayDeque<String> readyNodes = new ArrayDeque<>();
+            Map<String, Node> nodesById = indexNodesById(definition);
+            Map<String, Integer> mergeInputCounts = countMergeInputs(definition, nodesById);
+            Map<String, Set<Integer>> mergeArrivals = new HashMap<>();
+            int visitedCount = 0;
+
+            Node startNode = workflowExecution.getCurrentNodeId() == null
                     ? findStartNode(definition)
                     : findNode(definition, workflowExecution.getCurrentNodeId());
+            readyNodes.add(startNode.getNodeId());
 
             workflowExecution.setStatus(ExecutionStatus.RUNNING);
             workflowExecutionService.update(workflowExecution);
 
-            while (current != null) {
+            while (!readyNodes.isEmpty()) {
+                if (visitedCount++ >= MAX_NODE_VISITS) {
+                    throw new IllegalStateException("Workflow exceeded maximum node visits: " + MAX_NODE_VISITS);
+                }
+
+                Node current = nodesById.get(readyNodes.removeFirst());
+                if (current == null) {
+                    continue;
+                }
+
                 workflowExecution.setCurrentNodeId(current.getNodeId());
                 workflowExecutionService.update(workflowExecution);
 
@@ -46,26 +72,47 @@ public class WorkflowEngine {
 
                 nodeExecution = buildNodeExecution(workflowExecution, current);
                 Map<String, Object> contextBeforeExecution = new LinkedHashMap<>(workflowExecution.getContext());
-                ExecutionBoundAction action = new ExecutionBoundAction(registry.getRequired(current.getActionType()));
-                activeActions.put(workflowExecution.getExecutionId(), action);
-                try {
-                    action.execute(new NodeExecutionContext(definition, workflowExecution, current));
-                } finally {
-                    activeActions.remove(workflowExecution.getExecutionId(), action);
+                List<Integer> selectedOutputs;
+                if (current.isDisabled()) {
+                    selectedOutputs = connectedOutputs(definition, current);
+                } else {
+                    ExecutionBoundNodeExecutor executor = new ExecutionBoundNodeExecutor(registry.getRequired(current.getType()));
+                    activeExecutors.put(workflowExecution.getExecutionId(), executor);
+                    try {
+                        executor.execute(new NodeExecutionContext(definition, workflowExecution, current));
+                        selectedOutputs = executor.selectOutputs(new NodeExecutionContext(definition, workflowExecution, current));
+                    } finally {
+                        activeExecutors.remove(workflowExecution.getExecutionId(), executor);
+                    }
+
+                    nodeExecution.setOutput(extractNodeOutput(contextBeforeExecution, workflowExecution.getContext()));
+                    nodeExecution.setEndedAt(ZonedDateTime.now());
+
+                    if (workflowExecution.getStatus() == ExecutionStatus.STOPPING) {
+                        return stopExecution(workflowExecution, nodeExecution, executor.stopReason());
+                    }
+                }
+                if (current.isDisabled()) {
+                    nodeExecution.setOutput(extractNodeOutput(contextBeforeExecution, workflowExecution.getContext()));
+                    nodeExecution.setEndedAt(ZonedDateTime.now());
                 }
 
-                nodeExecution.setOutput(extractNodeOutput(contextBeforeExecution, workflowExecution.getContext()));
-                nodeExecution.setEndedAt(Instant.now());
-
-                if (workflowExecution.getStatus() == ExecutionStatus.STOPPING) {
-                    return stopExecution(workflowExecution, nodeExecution, action.stopReason());
-                }
-
-                Node next = resolveNextNode(definition, current, workflowExecution.getContext());
                 nodeExecution.setStatus(ExecutionStatus.SUCCESS);
                 nodeExecutionRepository.save(nodeExecution);
                 nodeExecution = null;
-                current = next;
+
+                for (OutgoingConnection outgoing : resolveOutgoing(definition, current, nodesById, selectedOutputs)) {
+                    Node target = outgoing.target();
+                    if (NodeType.MERGE.equals(target.getType())) {
+                        Set<Integer> arrivals = mergeArrivals.computeIfAbsent(target.getNodeId(), key -> new HashSet<>());
+                        arrivals.add(outgoing.targetInputIndex());
+                        if (arrivals.size() < mergeInputCounts.getOrDefault(target.getNodeId(), 1)) {
+                            continue;
+                        }
+                        arrivals.clear();
+                    }
+                    readyNodes.addLast(target.getNodeId());
+                }
             }
 
             workflowExecution.setStatus(ExecutionStatus.SUCCESS);
@@ -74,7 +121,7 @@ public class WorkflowEngine {
         } catch (Exception exception) {
             if (nodeExecution != null) {
                 nodeExecution.setStatus(ExecutionStatus.FAILED);
-                nodeExecution.setEndedAt(Instant.now());
+                nodeExecution.setEndedAt(ZonedDateTime.now());
                 nodeExecution.setMessage(exception.getMessage());
                 nodeExecutionRepository.save(nodeExecution);
             }
@@ -91,12 +138,12 @@ public class WorkflowEngine {
             return execution;
         }
 
-        ExecutionBoundAction activeAction = activeActions.get(executionId);
-        if (activeAction == null) {
+        ExecutionBoundNodeExecutor activeExecutor = activeExecutors.get(executionId);
+        if (activeExecutor == null) {
             return stopExecution(execution, null, reason);
         }
 
-        activeAction.stop(reason);
+        activeExecutor.stop(reason);
         return workflowExecutionService.getRequired(executionId);
     }
 
@@ -105,7 +152,7 @@ public class WorkflowEngine {
         nodeExecution.setExecutionId(execution.getExecutionId());
         nodeExecution.setNodeId(current.getNodeId());
         nodeExecution.setStatus(ExecutionStatus.RUNNING);
-        nodeExecution.setStartedAt(Instant.now());
+        nodeExecution.setStartedAt(ZonedDateTime.now());
         nodeExecution.setInput(Map.copyOf(execution.getContext()));
         return nodeExecution;
     }
@@ -123,7 +170,7 @@ public class WorkflowEngine {
     private WorkflowExecution stopExecution(WorkflowExecution workflowExecution, NodeExecution nodeExecution, String reason) {
         if (nodeExecution != null) {
             nodeExecution.setStatus(ExecutionStatus.STOPPED);
-            nodeExecution.setEndedAt(nodeExecution.getEndedAt() != null ? nodeExecution.getEndedAt() : Instant.now());
+            nodeExecution.setEndedAt(nodeExecution.getEndedAt() != null ? nodeExecution.getEndedAt() : ZonedDateTime.now());
             nodeExecution.setMessage(reason);
             nodeExecutionRepository.save(nodeExecution);
         }
@@ -136,7 +183,7 @@ public class WorkflowEngine {
 
     private Node findStartNode(WorkflowDefinition definition) {
         return definition.getNodes().stream()
-                .filter(node -> ActionType.START.equals(node.getActionType()))
+                .filter(node -> NodeType.START.equals(node.getType()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Start node not found"));
     }
@@ -148,52 +195,118 @@ public class WorkflowEngine {
                 .orElseThrow(() -> new IllegalArgumentException("Node not found: " + nodeId));
     }
 
-    private Node resolveNextNode(WorkflowDefinition definition, Node current, Map<String, Object> context) {
-        List<Edge> outgoingEdges = definition.getEdges().stream()
-                .filter(edge -> edge.getFrom().equals(current.getNodeId()))
-                .toList();
-
-        if (outgoingEdges.isEmpty()) {
-            return null;
+    private Map<String, Node> indexNodesById(WorkflowDefinition definition) {
+        Map<String, Node> nodes = new LinkedHashMap<>();
+        for (Node node : definition.getNodes()) {
+            nodes.put(node.getNodeId(), node);
         }
-
-        List<Edge> conditionalEdges = outgoingEdges.stream()
-                .filter(edge -> edge.getCondition() != null && !edge.getCondition().isBlank())
-                .toList();
-        List<Edge> defaultEdges = outgoingEdges.stream()
-                .filter(edge -> edge.getCondition() == null || edge.getCondition().isBlank())
-                .toList();
-
-        List<Edge> matchedConditionalEdges = conditionalEdges.stream()
-                .filter(edge -> conditionEvaluator.matches(edge.getCondition(), context))
-                .toList();
-
-        if (matchedConditionalEdges.size() > 1) {
-            throw new IllegalStateException("Multiple edges matched from node: " + current.getNodeId());
-        }
-        if (matchedConditionalEdges.size() == 1) {
-            return findNode(definition, matchedConditionalEdges.getFirst().getTo());
-        }
-        if (defaultEdges.isEmpty()) {
-            return null;
-        }
-        if (defaultEdges.size() > 1) {
-            throw new IllegalStateException("Multiple default edges configured from node: " + current.getNodeId());
-        }
-        return findNode(definition, defaultEdges.getFirst().getTo());
+        return nodes;
     }
 
-    private static final class ExecutionBoundAction implements Action {
-        private final Action delegate;
+    private Map<String, Integer> countMergeInputs(WorkflowDefinition definition, Map<String, Node> nodesById) {
+        Map<String, Integer> inputCounts = new HashMap<>();
+        if (!definition.getConnections().isEmpty()) {
+            definition.getConnections().values().stream()
+                    .map(connections -> connections.getMain())
+                    .filter(Objects::nonNull)
+                    .flatMap(List::stream)
+                    .filter(Objects::nonNull)
+                    .flatMap(List::stream)
+                    .filter(Objects::nonNull)
+                    .forEach(target -> {
+                        Node node = nodesById.get(target.getNode());
+                        if (node != null && NodeType.MERGE.equals(node.getType())) {
+                            inputCounts.merge(node.getNodeId(), 1, Integer::sum);
+                        }
+                    });
+            return inputCounts;
+        }
+
+        for (Edge edge : definition.getEdges()) {
+            Node node = definition.getNodes().stream()
+                    .filter(candidate -> candidate.getNodeId().equals(edge.getTo()))
+                    .findFirst()
+                    .orElse(null);
+            if (node != null && NodeType.MERGE.equals(node.getType())) {
+                inputCounts.merge(node.getNodeId(), 1, Integer::sum);
+            }
+        }
+        return inputCounts;
+    }
+
+    private List<Integer> connectedOutputs(WorkflowDefinition definition, Node node) {
+        List<Integer> outputs = new ArrayList<>();
+        if (!definition.getConnections().isEmpty()) {
+            var nodeConnections = definition.getConnections().get(node.getNodeId());
+            if (nodeConnections == null || nodeConnections.getMain() == null) {
+                return outputs;
+            }
+            for (int index = 0; index < nodeConnections.getMain().size(); index++) {
+                List<?> targets = nodeConnections.getMain().get(index);
+                if (targets != null && !targets.isEmpty()) {
+                    outputs.add(index);
+                }
+            }
+            return outputs;
+        }
+
+        if (definition.getEdges().stream().anyMatch(edge -> edge.getFrom().equals(node.getNodeId()))) {
+            outputs.add(0);
+        }
+        return outputs;
+    }
+
+    private List<OutgoingConnection> resolveOutgoing(WorkflowDefinition definition,
+                                                     Node current,
+                                                     Map<String, Node> nodesById,
+                                                     List<Integer> selectedOutputs) {
+        List<OutgoingConnection> outgoing = new ArrayList<>();
+        if (!definition.getConnections().isEmpty()) {
+            var nodeConnections = definition.getConnections().get(current.getNodeId());
+            if (nodeConnections == null || nodeConnections.getMain() == null) {
+                return outgoing;
+            }
+            for (Integer outputIndex : selectedOutputs) {
+                if (outputIndex < 0 || outputIndex >= nodeConnections.getMain().size()) {
+                    continue;
+                }
+                List<com.luziatcode.demoworkflowengine.service.workflow.domain.ConnectionTarget> targets =
+                        nodeConnections.getMain().get(outputIndex);
+                if (targets == null) {
+                    continue;
+                }
+                for (var target : targets) {
+                    Node targetNode = nodesById.get(target.getNode());
+                    if (targetNode != null) {
+                        outgoing.add(new OutgoingConnection(targetNode, target.getIndex()));
+                    }
+                }
+            }
+            return outgoing;
+        }
+
+        if (selectedOutputs.contains(0)) {
+            for (Edge edge : definition.getEdges()) {
+                if (edge.getFrom().equals(current.getNodeId())) {
+                    Node targetNode = findNode(definition, edge.getTo());
+                    outgoing.add(new OutgoingConnection(targetNode, 0));
+                }
+            }
+        }
+        return outgoing;
+    }
+
+    private static final class ExecutionBoundNodeExecutor implements NodeExecutor {
+        private final NodeExecutor delegate;
         private final AtomicReference<Thread> executingThread = new AtomicReference<>();
         private final AtomicReference<String> stopReason = new AtomicReference<>("Stopped by user request");
 
-        private ExecutionBoundAction(Action delegate) {
+        private ExecutionBoundNodeExecutor(NodeExecutor delegate) {
             this.delegate = delegate;
         }
 
         @Override
-        public ActionType getType() {
+        public NodeType getType() {
             return delegate.getType();
         }
 
@@ -205,6 +318,11 @@ public class WorkflowEngine {
             } finally {
                 executingThread.set(null);
             }
+        }
+
+        @Override
+        public List<Integer> selectOutputs(NodeExecutionContext context) {
+            return delegate.selectOutputs(context);
         }
 
         @Override
@@ -221,5 +339,8 @@ public class WorkflowEngine {
         private String stopReason() {
             return stopReason.get();
         }
+    }
+
+    private record OutgoingConnection(Node target, int targetInputIndex) {
     }
 }

@@ -4,7 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
-import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -13,12 +13,13 @@ import java.util.Map;
 @ToString
 public class WorkflowExecution {
     private String executionId;
-    private String workflowId;
-    private int workflowVersion;
+    private String definitionId;
+    private int definitionVersion;
+    private WorkflowDefinition definition;
     private ExecutionStatus status = ExecutionStatus.READY;
     private String currentNodeId;
-    private Instant createdAt = Instant.now();
-    private Instant updatedAt = Instant.now();
+    private ZonedDateTime createdAt = ZonedDateTime.now();
+    private ZonedDateTime updatedAt = ZonedDateTime.now();
     private String failureMessage;
     private Map<String, Object> context = new LinkedHashMap<>();
 

@@ -4,7 +4,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
-import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -15,8 +15,8 @@ public class NodeExecution {
     private String executionId;
     private String nodeId;
     private ExecutionStatus status;
-    private Instant startedAt = Instant.now();
-    private Instant endedAt;
+    private ZonedDateTime startedAt = ZonedDateTime.now();
+    private ZonedDateTime endedAt;
     private Map<String, Object> input = new LinkedHashMap<>();
     private Map<String, Object> output = new LinkedHashMap<>();
     private String message;

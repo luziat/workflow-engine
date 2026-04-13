@@ -11,8 +11,8 @@
 - [x] Workflow 구조 
 
 ## Execution
-- [ ] run, stop
-- [ ] 동기 실행
+- [x] run, stop
+- [x] 동기 실행
 - [ ] 비동기 노드 트리거
 - [ ] 다중 흐름 관리
 

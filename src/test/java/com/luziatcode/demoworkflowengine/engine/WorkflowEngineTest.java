@@ -2,11 +2,15 @@ package com.luziatcode.demoworkflowengine.engine;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.luziatcode.demoworkflowengine.service.workflow.action.Action;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.NodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.*;
-import com.luziatcode.demoworkflowengine.service.workflow.action.base.StartAction;
-import com.luziatcode.demoworkflowengine.service.workflow.action.base.SwitchAction;
-import com.luziatcode.demoworkflowengine.service.workflow.action.custom.GenericAction;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.base.LoopNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.base.MergeNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.base.NoteNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.base.StartNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.base.SwitchNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.GenericNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.custom.HttpNodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.WorkflowExecutionService;
@@ -28,35 +32,44 @@ class WorkflowEngineTest {
 
     @Test
     void runCompletesLinearWorkflowAndPersistsNodeExecutions() {
+        /* 저장소 */
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartAction(), new GenericAction())),
-                executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
-        );
+
+        /* 실행 서비스 (런타임) */
+        WorkflowExecutionService executionService = new WorkflowExecutionService(workflowExecutionRepository);
+
+        /* 엔진 */
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new GenericNodeExecutor()));
+        WorkflowEngine engine = new WorkflowEngine(nodeExecutorRegistry, executionService, nodeExecutionRepository);
+
         WorkflowDefinition definition = definition("""
                 {
                   "id": "send-email",
                   "version": 2,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "actionType": "START" },
-                    { "nodeId": "task", "name": "Send Email", "actionType": "GENERIC" }
+                    { "id": "start", "name": "시작", "type": "START", "params": {} },
+                    { "id": "task", "name": "이메일 보내기", "type": "GENERIC", "params": {} }
                   ],
-                  "edges": [
-                    { "edgeId": "start-task", "from": "start", "to": "task" }
-                  ]
+                  "connections": {
+                    "start": {
+                      "main": [
+                        [
+                          { "node": "task", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    }
+                  }
                 }
                 """);
         WorkflowExecution execution = executionService.create(definition, Map.of("requestId", "req-1"));
 
-        WorkflowExecution result = engine.run(definition, execution);
+        WorkflowExecution result = engine.run(execution);
 
         assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
         assertNull(result.getCurrentNodeId());
         assertEquals(true, result.getContext().get("started"));
-        assertEquals("Send Email", result.getContext().get("lastTask"));
+        assertEquals("이메일 보내기", result.getContext().get("lastTask"));
         assertEquals("task", result.getContext().get("handledBy"));
 
         List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
@@ -72,10 +85,10 @@ class WorkflowEngineTest {
     void runMarksExecutionFailedWhenExecutorThrows() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        Action failingExecutor = new Action() {
+        NodeExecutor failingExecutor = new NodeExecutor() {
             @Override
-            public ActionType getType() {
-                return ActionType.GENERIC;
+            public NodeType getType() {
+                return NodeType.GENERIC;
             }
 
             @Override
@@ -84,27 +97,32 @@ class WorkflowEngineTest {
             }
         };
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartAction(), failingExecutor)),
+                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), failingExecutor)),
                 executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
+                nodeExecutionRepository
         );
         WorkflowDefinition definition = definition("""
                 {
                   "id": "failure-workflow",
                   "version": 1,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "actionType": "START" },
-                    { "nodeId": "fail-node", "name": "Failure", "actionType": "GENERIC" }
+                    { "id": "start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "fail-node", "name": "Failure", "type": "GENERIC", "params": {} }
                   ],
-                  "edges": [
-                    { "edgeId": "start-fail-node", "from": "start", "to": "fail-node" }
-                  ]
+                  "connections": {
+                    "start": {
+                      "main": [
+                        [
+                          { "node": "fail-node", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    }
+                  }
                 }
                 """);
         WorkflowExecution execution = executionService.create(definition, Map.of());
 
-        WorkflowExecution result = engine.run(definition, execution);
+        WorkflowExecution result = engine.run(execution);
 
         assertEquals(ExecutionStatus.FAILED, result.getStatus());
         assertEquals("boom", result.getFailureMessage());
@@ -119,134 +137,120 @@ class WorkflowEngineTest {
     }
 
     @Test
-    void runMarksExecutionFailedWhenMultipleEdgesMatch() {
+    void runSupportsN8nConnectionsWithParallelBranchesAndMerge() {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartAction(), new SwitchAction(), new GenericAction())),
+                new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor(), new MergeNodeExecutor())),
                 executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
+                nodeExecutionRepository
         );
         WorkflowDefinition definition = definition("""
                 {
                   "id": "branching-workflow",
                   "version": 3,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "actionType": "START" },
-                    { "nodeId": "decision", "name": "Decision", "actionType": "SWITCH" },
-                    { "nodeId": "task-a", "name": "Branch A", "actionType": "GENERIC" },
-                    { "nodeId": "task-b", "name": "Branch B", "actionType": "GENERIC" }
+                    { "id": "start", "name": "When clicking Execute workflow", "type": "START", "params": {} },
+                    { "id": "http-1", "name": "HTTP Request", "type": "HTTP", "params": { "url": "http://a.example" } },
+                    { "id": "http-2", "name": "HTTP Request 2", "type": "HTTP", "params": { "url": "http://b.example" } },
+                    { "id": "http-3", "name": "HTTP Request 3", "type": "HTTP", "params": { "url": "http://c.example" } },
+                    { "id": "merge", "name": "Merge", "type": "MERGE", "params": {} }
                   ],
-                  "edges": [
-                    { "edgeId": "start-decision", "from": "start", "to": "decision" },
-                    { "edgeId": "decision-task-a", "from": "decision", "to": "task-a", "condition": "score >= 10" },
-                    { "edgeId": "decision-task-b", "from": "decision", "to": "task-b", "condition": "score > 5" }
-                  ]
+                  "connections": {
+                    "start": {
+                      "main": [
+                        [
+                          { "node": "http-1", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    },
+                    "http-1": {
+                      "main": [
+                        [
+                          { "node": "http-2", "type": "main", "index": 0 },
+                          { "node": "http-3", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    },
+                    "http-2": {
+                      "main": [
+                        [
+                          { "node": "merge", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    },
+                    "http-3": {
+                      "main": [
+                        [
+                          { "node": "merge", "type": "main", "index": 1 }
+                        ]
+                      ]
+                    }
+                  }
                 }
                 """);
-        WorkflowExecution execution = executionService.create(definition, Map.of("score", 10));
+        WorkflowExecution execution = executionService.create(definition, Map.of());
 
-        WorkflowExecution result = engine.run(definition, execution);
+        WorkflowExecution result = engine.run(execution);
 
-        assertEquals(ExecutionStatus.FAILED, result.getStatus());
-        assertEquals("Multiple edges matched from node: decision", result.getFailureMessage());
-        assertEquals("decision", result.getCurrentNodeId());
+        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+        assertEquals("http://c.example", result.getContext().get("lastHttpUrl"));
+        assertEquals(200, result.getContext().get("httpStatus"));
         List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(execution.getExecutionId());
-        assertEquals(2, nodeExecutions.size());
-        assertEquals(ExecutionStatus.FAILED, nodeExecutions.get(1).getStatus());
-        assertEquals("decision", nodeExecutions.get(1).getNodeId());
-        assertEquals("Multiple edges matched from node: decision", nodeExecutions.get(1).getMessage());
+        assertEquals(5, nodeExecutions.size());
+        assertEquals("merge", nodeExecutions.get(4).getNodeId());
+        assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(4).getStatus());
     }
 
     @Test
-    void runUsesNullConditionAsElseWhenNoOtherEdgesMatch() {
-        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartAction(), new SwitchAction(), new GenericAction())),
-                executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
-        );
+    void parsesActionTypeWorkflowJson() {
         WorkflowDefinition definition = definition("""
                 {
-                  "id": "else-branch-workflow",
-                  "version": 1,
+                  "id": "8hKbtk3KW6TrsrH9",
+                  "name": "My workflow",
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "actionType": "START" },
-                    { "nodeId": "decision", "name": "Decision", "actionType": "SWITCH" },
-                    { "nodeId": "task-a", "name": "Branch A", "actionType": "GENERIC" },
-                    { "nodeId": "task-b", "name": "Branch B", "actionType": "GENERIC" },
-                    { "nodeId": "task-else", "name": "Else Branch", "actionType": "GENERIC" }
+                    {
+                      "params": {},
+                      "type": "START",
+                      "id": "acfabc3b-211e-40b7-a7c4-8f5c14b18338",
+                      "name": "When clicking Execute workflow"
+                    },
+                    {
+                      "params": {
+                        "url": "http://www.naver.com",
+                        "options": {}
+                      },
+                      "type": "HTTP",
+                      "id": "07ff0d27-5843-4db9-bd0d-dbb88f5163a3",
+                      "name": "HTTP Request"
+                    }
                   ],
-                  "edges": [
-                    { "edgeId": "start-decision", "from": "start", "to": "decision" },
-                    { "edgeId": "decision-task-a", "from": "decision", "to": "task-a", "condition": "score >= 10" },
-                    { "edgeId": "decision-task-b", "from": "decision", "to": "task-b", "condition": "score > 5" },
-                    { "edgeId": "decision-task-else", "from": "decision", "to": "task-else", "condition": null }
-                  ]
+                  "connections": {
+                    "acfabc3b-211e-40b7-a7c4-8f5c14b18338": {
+                      "main": [
+                        [
+                          {
+                            "node": "07ff0d27-5843-4db9-bd0d-dbb88f5163a3",
+                            "type": "main",
+                            "index": 0
+                          }
+                        ]
+                      ]
+                    }
+                  }
                 }
                 """);
-        WorkflowExecution execution = executionService.create(definition, Map.of("score", 3));
 
-        WorkflowExecution result = engine.run(definition, execution);
-
-        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
-        assertNull(result.getCurrentNodeId());
-        assertEquals("Else Branch", result.getContext().get("lastTask"));
-        assertEquals("task-else", result.getContext().get("handledBy"));
-
-        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
-        assertEquals(3, nodeExecutions.size());
-        assertEquals("start", nodeExecutions.get(0).getNodeId());
-        assertEquals("decision", nodeExecutions.get(1).getNodeId());
-        assertEquals("task-else", nodeExecutions.get(2).getNodeId());
-        assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(2).getStatus());
-    }
-
-    @Test
-    void runPrefersMatchedConditionOverElseEdge() {
-        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
-        WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartAction(), new SwitchAction(), new GenericAction())),
-                executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
-        );
-        WorkflowDefinition definition = definition("""
-                {
-                  "id": "else-if-workflow",
-                  "version": 1,
-                  "nodes": [
-                    { "nodeId": "start", "name": "Start", "actionType": "START" },
-                    { "nodeId": "decision", "name": "Decision", "actionType": "SWITCH" },
-                    { "nodeId": "task-a", "name": "Branch A", "actionType": "GENERIC" },
-                    { "nodeId": "task-b", "name": "Branch B", "actionType": "GENERIC" },
-                    { "nodeId": "task-else", "name": "Else Branch", "actionType": "GENERIC" }
-                  ],
-                  "edges": [
-                    { "edgeId": "start-decision", "from": "start", "to": "decision" },
-                    { "edgeId": "decision-task-a", "from": "decision", "to": "task-a", "condition": "score >= 10" },
-                    { "edgeId": "decision-task-b", "from": "decision", "to": "task-b", "condition": "score > 5" },
-                    { "edgeId": "decision-task-else", "from": "decision", "to": "task-else", "condition": null }
-                  ]
-                }
-                """);
-        WorkflowExecution execution = executionService.create(definition, Map.of("score", 6));
-
-        WorkflowExecution result = engine.run(definition, execution);
-
-        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
-        assertNull(result.getCurrentNodeId());
-        assertEquals("Branch B", result.getContext().get("lastTask"));
-        assertEquals("task-b", result.getContext().get("handledBy"));
-
-        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
-        assertEquals(3, nodeExecutions.size());
-        assertEquals("task-b", nodeExecutions.get(2).getNodeId());
-        assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(2).getStatus());
+        assertEquals("8hKbtk3KW6TrsrH9", definition.getId());
+        assertEquals("My workflow", definition.getName());
+        assertEquals(NodeType.START, definition.getNodes().get(0).getType());
+        assertEquals(NodeType.HTTP, definition.getNodes().get(1).getType());
+        assertEquals("07ff0d27-5843-4db9-bd0d-dbb88f5163a3", definition.getConnections()
+                .get("acfabc3b-211e-40b7-a7c4-8f5c14b18338")
+                .getMain()
+                .getFirst()
+                .getFirst()
+                .getNode());
     }
 
     @Test
@@ -254,29 +258,49 @@ class WorkflowEngineTest {
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
         WorkflowExecutionService executionService = new WorkflowExecutionService(new WorkflowExecutionRepository());
         WorkflowEngine engine = new WorkflowEngine(
-                new NodeExecutorRegistry(List.of(new StartAction(), new com.luziatcode.demoworkflowengine.service.workflow.action.custom.TimerAction(), new GenericAction())),
+                new NodeExecutorRegistry(List.of(
+                        new StartNodeExecutor(),
+                        new com.luziatcode.demoworkflowengine.service.workflow.executor.custom.TimerNodeExecutor(),
+                        new GenericNodeExecutor(),
+                        new SwitchNodeExecutor(),
+                        new HttpNodeExecutor(),
+                        new MergeNodeExecutor(),
+                        new LoopNodeExecutor(),
+                        new NoteNodeExecutor()
+                )),
                 executionService,
-                nodeExecutionRepository,
-                new SimpleConditionEvaluator()
+                nodeExecutionRepository
         );
         WorkflowDefinition definition = definition("""
                 {
                   "id": "stoppable-workflow",
                   "version": 1,
                   "nodes": [
-                    { "nodeId": "start", "name": "Start", "actionType": "START" },
-                    { "nodeId": "wait", "name": "Wait", "actionType": "TIMER" },
-                    { "nodeId": "task", "name": "Should Not Run", "actionType": "GENERIC" }
+                    { "id": "start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "wait", "name": "Wait", "type": "TIMER", "params": {} },
+                    { "id": "task", "name": "Should Not Run", "type": "GENERIC", "params": {} }
                   ],
-                  "edges": [
-                    { "edgeId": "start-wait", "from": "start", "to": "wait" },
-                    { "edgeId": "wait-task", "from": "wait", "to": "task" }
-                  ]
+                  "connections": {
+                    "start": {
+                      "main": [
+                        [
+                          { "node": "wait", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    },
+                    "wait": {
+                      "main": [
+                        [
+                          { "node": "task", "type": "main", "index": 0 }
+                        ]
+                      ]
+                    }
+                  }
                 }
                 """);
         WorkflowExecution execution = executionService.create(definition, Map.of());
 
-        CompletableFuture<WorkflowExecution> future = CompletableFuture.supplyAsync(() -> engine.run(definition, execution));
+        CompletableFuture<WorkflowExecution> future = CompletableFuture.supplyAsync(() -> engine.run(execution));
 
         awaitStatus(executionService, execution.getExecutionId(), ExecutionStatus.RUNNING);
         awaitCurrentNode(executionService, execution.getExecutionId(), "wait");
