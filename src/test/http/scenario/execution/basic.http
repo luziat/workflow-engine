@@ -1,0 +1,66 @@
+@baseUrl = http://localhost:8080
+@workflowId = basic-test-workflow
+
+### 1. 기본 테스트용 워크플로우 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Basic Runtime Test Workflow",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_test",
+      "name": "Test Task",
+      "type": "END",
+      "params": {
+        "name": "Runtime Test Task"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. 워크플로우 비동기 실행 시작
+# 실행 후 executionId를 다음 요청들에 자동 저장한다.
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "customKey": "runtime-test-001"
+}
+
+> {% client.global.set("executionId", response.body.executionId); %}
+
+### 3. 실행 상태 조회
+GET {{baseUrl}}/api/executions/{{executionId}}
+
+### 4. 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{executionId}}/nodes
+
+### 5. 실행 중인 경우 중지 요청
+POST {{baseUrl}}/api/executions/{{executionId}}/stop
+Content-Type: application/json
+
+{
+  "reason": "Stopped from workflow.http"
+}

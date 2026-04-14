@@ -1,0 +1,121 @@
+@baseUrl = http://localhost:8080
+@workflowId = flow-if-workflow
+
+### 1. IF 노드 중심 워크플로우 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "If Flow Runtime Test",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_if",
+      "name": "If",
+      "type": "IF",
+      "params": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "<<order.totalAmount>>",
+              "rightValue": 10000,
+              "operator": {
+                "operation": "greaterThanOrEqual"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node_true",
+      "name": "Approved",
+      "type": "END",
+      "params": {
+        "name": "Approved branch"
+      }
+    },
+    {
+      "id": "node_false",
+      "name": "Rejected",
+      "type": "END",
+      "params": {
+        "name": "Rejected branch"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_if",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_if": {
+      "main": [
+        [
+          {
+            "nodeId": "node_true",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "nodeId": "node_false",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. true branch 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "order": {
+    "totalAmount": 10000
+  }
+}
+
+> {% client.global.set("ifTrueExecutionId", response.body.executionId); %}
+
+### 3. true branch 상태 조회
+GET {{baseUrl}}/api/executions/{{ifTrueExecutionId}}
+
+### 4. true branch 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{ifTrueExecutionId}}/nodes
+
+### 5. false branch 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "order": {
+    "totalAmount": 9999
+  }
+}
+
+> {% client.global.set("ifFalseExecutionId", response.body.executionId); %}
+
+### 6. false branch 상태 조회
+GET {{baseUrl}}/api/executions/{{ifFalseExecutionId}}
+
+### 7. false branch 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{ifFalseExecutionId}}/nodes

@@ -1,0 +1,85 @@
+@baseUrl = http://localhost:8080
+@workflowId = execution-status-workflow
+
+### 1. 상태 전이 확인용 워크플로우 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Execution Status Transition Test",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_wait",
+      "name": "Wait",
+      "type": "TIMER",
+      "params": {
+        "waitMillis": 3000
+      }
+    },
+    {
+      "id": "node_done",
+      "name": "Done",
+      "type": "END",
+      "params": {
+        "name": "Status transition completed"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_wait": {
+      "main": [
+        [
+          {
+            "nodeId": "node_done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. 비동기 실행 시작
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "requestId": "execution-status-001"
+}
+
+> {% client.global.set("statusExecutionId", response.body.executionId); %}
+
+### 3. 실행 직후 상태 조회
+# READY 또는 RUNNING을 볼 수 있다.
+GET {{baseUrl}}/api/executions/{{statusExecutionId}}
+
+### 4. 실행 중 상태 조회
+# node_wait 에 머무르는 동안 RUNNING 상태를 확인한다.
+GET {{baseUrl}}/api/executions/{{statusExecutionId}}
+
+### 5. 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{statusExecutionId}}/nodes
+
+### 6. 완료 후 상태 조회
+# 잠시 기다린 뒤 SUCCESS와 currentNodeId=null 을 확인한다.
+GET {{baseUrl}}/api/executions/{{statusExecutionId}}

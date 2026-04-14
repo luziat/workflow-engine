@@ -1,6 +1,6 @@
 package com.luziatcode.demoworkflowengine.repository;
 
-import com.luziatcode.demoworkflowengine.service.workflow.domain.NodeExecution;
+import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.NodeExecution;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -13,7 +13,10 @@ public class NodeExecutionRepository {
     private final Map<String, List<NodeExecution>> store = new ConcurrentHashMap<>();
 
     public NodeExecution save(NodeExecution nodeExecution) {
-        store.computeIfAbsent(nodeExecution.getExecutionId(), key -> new ArrayList<>()).add(nodeExecution);
+        List<NodeExecution> nodeExecutions = store.computeIfAbsent(nodeExecution.getExecutionId(), key -> new ArrayList<>());
+        if (!nodeExecutions.contains(nodeExecution)) {
+            nodeExecutions.add(nodeExecution);
+        }
         return nodeExecution;
     }
 
