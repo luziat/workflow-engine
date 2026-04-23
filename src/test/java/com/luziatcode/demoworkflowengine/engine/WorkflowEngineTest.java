@@ -16,6 +16,7 @@ import com.luziatcode.demoworkflowengine.service.workflow.executor.flow.SwitchNo
 import com.luziatcode.demoworkflowengine.service.workflow.executor.flow.IfNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.task.HttpNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.task.NoteNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.task.AINodeExecutor;
 import com.luziatcode.demoworkflowengine.repository.NodeExecutionRepository;
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.workflow.WorkflowDefinitionService;
@@ -711,7 +712,276 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("10.observation - workflow와 node 상태 변경시 listener가 호출된다")
+    @DisplayName("10.AI 노드 실행 - messages 템플릿을 해석하고 mock 응답을 context에 기록한다")
+    void aiExecutorResolvesMessagesAndStoresMockResponse() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                new StartNodeExecutor(),
+                new AINodeExecutor(),
+                new EndNodeExecutor()
+        ));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
+        WorkflowEngine engine = workflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "ai-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_ai", "name": "AI", "type": "AI", "params": {
+                      "model": "gpt-4.1-mini",
+                      "temperature": 0.2,
+                      "messages": [
+                        { "role": "system", "content": "You are a helper for <<customer.tier>> customers." },
+                        { "role": "user", "content": "Summarize ticket <<ticket.title>>" }
+                      ]
+                    } },
+                    { "id": "node_end", "name": "Done", "type": "END", "params": {} }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [[{ "nodeId": "node_ai", "type": "main", "index": 0 }]]
+                    },
+                    "node_ai": {
+                      "main": [[{ "nodeId": "node_end", "type": "main", "index": 0 }]]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution result = engine.run(executionService.create(definition, Map.of(
+                "customer", Map.of("tier", "vip"),
+                "ticket", Map.of("title", "Payment delayed")
+        )));
+
+        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+        assertEquals(Map.of(
+                "node_ai", Map.of(
+                        "model", "gpt-4.1-mini",
+                        "temperature", 0.2,
+                        "imageCount", 0,
+                        "response", "[gpt-4.1-mini] Summarize ticket Payment delayed (images=0)",
+                        "prompt", List.of(
+                                Map.of(
+                                        "role", "system",
+                                        "content", List.of(
+                                                Map.of("type", "text", "text", "You are a helper for vip customers.")
+                                        )
+                                ),
+                                Map.of(
+                                        "role", "user",
+                                        "content", List.of(
+                                                Map.of("type", "text", "text", "Summarize ticket Payment delayed")
+                                        )
+                                )
+                        )
+                )
+        ), result.getContext().get("aiOutputs"));
+        assertEquals("node_end", result.getContext().get("handledBy"));
+    }
+
+    @Test
+    @DisplayName("11.AI 멀티모달과 병렬 머지 - 노드별 결과를 aiOutputs에 분리해 저장한다")
+    void aiExecutorStoresParallelOutputsByNodeId() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                new StartNodeExecutor(),
+                new AINodeExecutor(),
+                new MergeNodeExecutor(),
+                new EndNodeExecutor()
+        ));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
+        WorkflowEngine engine = workflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "ai-parallel-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_ai_text", "name": "AI Text", "type": "AI", "params": {
+                      "model": "gpt-4.1-mini",
+                      "messages": [
+                        { "role": "user", "content": "Summarize ticket <<ticket.title>>" }
+                      ]
+                    } },
+                    { "id": "node_ai_vision", "name": "AI Vision", "type": "AI", "params": {
+                      "model": "gpt-4.1-mini",
+                      "messages": [
+                        { "role": "user", "content": [
+                          { "type": "text", "text": "Describe <<ticket.title>>" },
+                          { "type": "image", "imageUrl": "https://img.example/<<ticket.imageId>>.png" }
+                        ] }
+                      ]
+                    } },
+                    { "id": "node_merge", "name": "Merge", "type": "MERGE", "params": {} },
+                    { "id": "node_end", "name": "Done", "type": "END", "params": {} }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [[
+                        { "nodeId": "node_ai_text", "type": "main", "index": 0 },
+                        { "nodeId": "node_ai_vision", "type": "main", "index": 0 }
+                      ]]
+                    },
+                    "node_ai_text": {
+                      "main": [[{ "nodeId": "node_merge", "type": "main", "index": 0 }]]
+                    },
+                    "node_ai_vision": {
+                      "main": [[{ "nodeId": "node_merge", "type": "main", "index": 1 }]]
+                    },
+                    "node_merge": {
+                      "main": [[{ "nodeId": "node_end", "type": "main", "index": 0 }]]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution result = engine.run(executionService.create(definition, Map.of(
+                "ticket", Map.of("title", "Payment delayed", "imageId", "receipt-1")
+        )));
+
+        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> aiOutputs = (Map<String, Object>) result.getContext().get("aiOutputs");
+        assertEquals(Set.of("node_ai_text", "node_ai_vision"), aiOutputs.keySet());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> textOutput = (Map<String, Object>) aiOutputs.get("node_ai_text");
+        assertEquals("[gpt-4.1-mini] Summarize ticket Payment delayed (images=0)", textOutput.get("response"));
+        assertEquals(0, textOutput.get("imageCount"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> visionOutput = (Map<String, Object>) aiOutputs.get("node_ai_vision");
+        assertEquals("[gpt-4.1-mini] Describe Payment delayed (images=1)", visionOutput.get("response"));
+        assertEquals(1, visionOutput.get("imageCount"));
+        assertEquals(List.of(
+                Map.of(
+                        "role", "user",
+                        "content", List.of(
+                                Map.of("type", "text", "text", "Describe Payment delayed"),
+                                Map.of("type", "image", "imageUrl", "https://img.example/receipt-1.png")
+                        )
+                )
+        ), visionOutput.get("prompt"));
+
+        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
+        assertEquals(Map.of(
+                "aiOutputs", Map.of(
+                        "node_ai_text", textOutput
+                )
+        ), nodeExecutions.stream()
+                .filter(nodeExecution -> "node_ai_text".equals(nodeExecution.getNodeId()))
+                .findFirst()
+                .orElseThrow()
+                .getOutput());
+        assertEquals(Map.of(
+                "aiOutputs", Map.of(
+                        "node_ai_vision", visionOutput
+                )
+        ), nodeExecutions.stream()
+                .filter(nodeExecution -> "node_ai_vision".equals(nodeExecution.getNodeId()))
+                .findFirst()
+                .orElseThrow()
+                .getOutput());
+    }
+
+    @Test
+    @DisplayName("12.AI 노드 입력 오류 - 잘못된 messages는 노드와 워크플로우를 FAILED로 만든다")
+    void aiExecutorFailsWhenMessagesAreInvalid() {
+        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                new StartNodeExecutor(),
+                new AINodeExecutor()
+        ));
+        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                workflowExecutionRepository,
+                nodeExecutionRepository,
+                List.of(),
+                List.of(),
+                new SyncTaskExecutor()
+        );
+        WorkflowEngine engine = workflowEngine(
+                nodeExecutorRegistry,
+                workflowExecutionRepository,
+                stateChangeSupport,
+                new SyncTaskExecutor()
+        );
+        WorkflowExecutionService executionService = workflowExecutionService(
+                workflowExecutionRepository,
+                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                engine,
+                stateChangeSupport
+        );
+        WorkflowDefinition definition = definition("""
+                {
+                  "id": "ai-invalid-workflow",
+                  "version": 1,
+                  "nodes": [
+                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                    { "id": "node_ai", "name": "AI", "type": "AI", "params": {
+                      "messages": [
+                        { "role": "user", "content": [] }
+                      ]
+                    } }
+                  ],
+                  "connections": {
+                    "node_start": {
+                      "main": [[{ "nodeId": "node_ai", "type": "main", "index": 0 }]]
+                    }
+                  }
+                }
+                """);
+
+        WorkflowExecution result = engine.run(executionService.create(definition, Map.of()));
+
+        assertEquals(ExecutionStatus.FAILED, result.getStatus());
+        assertEquals("AI node message content must be a non-empty string or parts array", result.getFailureMessage());
+
+        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
+        assertEquals(2, nodeExecutions.size());
+        assertEquals(ExecutionStatus.FAILED, nodeExecutions.get(1).getStatus());
+        assertEquals("AI node message content must be a non-empty string or parts array", nodeExecutions.get(1).getMessage());
+    }
+
+    @Test
+    @DisplayName("13.observation - workflow와 node 상태 변경시 listener가 호출된다")
     void observationNotifiesWorkflowAndNodeListeners() throws Exception {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -773,7 +1043,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("11.observation - listener 실패가 실행 흐름을 깨뜨리지 않는다")
+    @DisplayName("14.observation - listener 실패가 실행 흐름을 깨뜨리지 않는다")
     void observationIgnoresListenerFailures() throws Exception {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -827,7 +1097,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("12.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
+    @DisplayName("15.실행 중 중지 명령 - 중지 요청 시 현재 실행 중인 노드를 멈추고 실행 상태를 STOPPED로 전환한다")
     void stopMarksExecutionStoppedAndStopsCurrentAction() throws Exception {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -838,6 +1108,7 @@ class WorkflowEngineTest {
                 new IfNodeExecutor(),
                 new SwitchNodeExecutor(),
                 new HttpNodeExecutor(),
+                new AINodeExecutor(),
                 new MergeNodeExecutor(),
                 new LoopNodeExecutor(),
                 new NoteNodeExecutor()

@@ -1,0 +1,143 @@
+@baseUrl = http://localhost:8080
+@workflowId = task-ai-parallel-workflow
+
+### 1. 병렬 AI 노드 테스트용 워크플로우 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "AI Parallel Runtime Test",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_ai_text",
+      "name": "AI Text Reply",
+      "type": "AI",
+      "params": {
+        "model": "gpt-4.1-mini",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "user",
+            "content": "Summarize ticket <<ticket.title>>"
+          }
+        ]
+      }
+    },
+    {
+      "id": "node_ai_vision",
+      "name": "AI Vision Reply",
+      "type": "AI",
+      "params": {
+        "model": "gpt-4.1-mini",
+        "temperature": 0.2,
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Describe ticket <<ticket.title>>"
+              },
+              {
+                "type": "image",
+                "imageUrl": "https://img.example/<<ticket.imageId>>.png"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "node_merge",
+      "name": "Merge",
+      "type": "MERGE",
+      "params": {}
+    },
+    {
+      "id": "node_done",
+      "name": "Done",
+      "type": "END",
+      "params": {
+        "name": "AI flow completed"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_ai_text",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "nodeId": "node_ai_vision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_ai_text": {
+      "main": [
+        [
+          {
+            "nodeId": "node_merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_ai_vision": {
+      "main": [
+        [
+          {
+            "nodeId": "node_merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "node_merge": {
+      "main": [
+        [
+          {
+            "nodeId": "node_done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. 워크플로우 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "ticket": {
+    "title": "Payment delayed",
+    "imageId": "receipt-1"
+  }
+}
+
+> {% client.global.set("aiExecutionId", response.body.executionId); %}
+
+### 3. 실행 상태 조회
+GET {{baseUrl}}/api/executions/{{aiExecutionId}}
+
+### 4. 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{aiExecutionId}}/nodes

@@ -91,7 +91,7 @@ public class WorkflowEngine {
                 }
 
                 nodeExecution = startNodeExecution(workflowExecution, current);
-                Map<String, Object> contextBeforeExecution = new LinkedHashMap<>(workflowExecution.getContext());
+                Map<String, Object> contextBeforeExecution = deepCopyMap(workflowExecution.getContext());
                 List<Integer> selectedOutputs;
                 if (current.isDisabled()) {
                     selectedOutputs = connectedOutputs(definition, current);
@@ -181,8 +181,60 @@ public class WorkflowEngine {
     private Map<String, Object> extractNodeOutput(Map<String, Object> before, Map<String, Object> after) {
         Map<String, Object> output = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : after.entrySet()) {
-            if (!Objects.equals(before.get(entry.getKey()), entry.getValue())) {
-                output.put(entry.getKey(), entry.getValue());
+            Object previousValue = before.get(entry.getKey());
+            Object currentValue = entry.getValue();
+            if (previousValue instanceof Map<?, ?> previousMap && currentValue instanceof Map<?, ?> currentMap) {
+                Map<String, Object> nestedDiff = extractNestedOutput(castMap(previousMap), castMap(currentMap));
+                if (!nestedDiff.isEmpty()) {
+                    output.put(entry.getKey(), nestedDiff);
+                }
+            } else if (!Objects.equals(previousValue, currentValue)) {
+                output.put(entry.getKey(), currentValue);
+            }
+        }
+        return output;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castMap(Map<?, ?> value) {
+        return (Map<String, Object>) value;
+    }
+
+    private Map<String, Object> deepCopyMap(Map<String, Object> source) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : source.entrySet()) {
+            copy.put(entry.getKey(), deepCopyValue(entry.getValue()));
+        }
+        return copy;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object deepCopyValue(Object value) {
+        if (value instanceof Map<?, ?> mapValue) {
+            return deepCopyMap(castMap(mapValue));
+        }
+        if (value instanceof List<?> listValue) {
+            List<Object> copy = new ArrayList<>(listValue.size());
+            for (Object item : listValue) {
+                copy.add(deepCopyValue(item));
+            }
+            return copy;
+        }
+        return value;
+    }
+
+    private Map<String, Object> extractNestedOutput(Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Object> output = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : after.entrySet()) {
+            Object previousValue = before.get(entry.getKey());
+            Object currentValue = entry.getValue();
+            if (previousValue instanceof Map<?, ?> previousMap && currentValue instanceof Map<?, ?> currentMap) {
+                Map<String, Object> nestedDiff = extractNestedOutput(castMap(previousMap), castMap(currentMap));
+                if (!nestedDiff.isEmpty()) {
+                    output.put(entry.getKey(), nestedDiff);
+                }
+            } else if (!Objects.equals(previousValue, currentValue)) {
+                output.put(entry.getKey(), currentValue);
             }
         }
         return output;

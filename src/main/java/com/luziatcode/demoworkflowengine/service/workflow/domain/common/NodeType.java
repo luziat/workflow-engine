@@ -12,5 +12,6 @@ public enum NodeType {
     /* 커스텀 노드 */
     END,
     TIMER,
-    HTTP
+    HTTP,
+    AI
 }
