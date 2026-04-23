@@ -1,0 +1,69 @@
+@baseUrl = http://localhost:8080
+@workflowId = cron-trigger-workflow
+
+### 1. CRON 시작 workflow 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Cron Trigger Workflow",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Cron Start",
+      "type": "START",
+      "params": {},
+      "metadata": {
+        "triggerType": "CRON",
+        "cron": "*/5 * * * * *",
+        "enabled": true,
+        "input": {
+          "seed": "cron-default",
+          "source": "cron-http-test"
+        }
+      }
+    },
+    {
+      "id": "node_done",
+      "name": "Done",
+      "type": "END",
+      "params": {
+        "name": "Triggered from cron"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. 최신 workflow 정의 조회
+GET {{baseUrl}}/api/workflows/{{workflowId}}
+
+### 3. workflow 전체 버전 조회
+GET {{baseUrl}}/api/workflows/{{workflowId}}/versions
+
+### 4. 전체 workflow 최신 버전 목록 조회
+GET {{baseUrl}}/api/workflows
+
+### 5. cron poller가 실행한 execution 목록 확인용 예시
+# 앱이 실행 중이면 cron poller가 주기적으로 workflow를 시작한다.
+# 생성된 executionId는 서버 로그나 /api/executions 조회 API 확장 후 확인한다.
+# 아래는 executionId를 알고 있을 때 상태 확인용 요청 예시다.
+@executionId = replace-with-execution-id
+GET {{baseUrl}}/api/executions/{{executionId}}
+
+### 6. 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{executionId}}/nodes

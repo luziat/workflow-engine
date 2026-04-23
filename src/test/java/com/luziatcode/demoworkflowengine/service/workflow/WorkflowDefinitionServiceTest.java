@@ -68,6 +68,36 @@ class WorkflowDefinitionServiceTest {
         assertEquals(1, saved.getVersion());
     }
 
+    @Test
+    @DisplayName("CRON 시작 노드는 cron metadata가 필요하다")
+    void saveRequiresCronMetadataForCronTrigger() {
+        WorkflowDefinitionService service = workflowDefinitionService();
+        WorkflowDefinition definition = definition("cron-flow", 1, "Cron End");
+        definition.getNodes().getFirst().getMetadata().put("triggerType", "CRON");
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.save(definition)
+        );
+
+        assertEquals("START cron trigger requires cron metadata", exception.getMessage());
+    }
+
+    @Test
+    @DisplayName("WEBHOOK 시작 노드는 webhookToken metadata가 필요하다")
+    void saveRequiresWebhookTokenForWebhookTrigger() {
+        WorkflowDefinitionService service = workflowDefinitionService();
+        WorkflowDefinition definition = definition("webhook-flow", 1, "Webhook End");
+        definition.getNodes().getFirst().getMetadata().put("triggerType", "WEBHOOK");
+
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.save(definition)
+        );
+
+        assertEquals("START webhook trigger requires webhookToken metadata", exception.getMessage());
+    }
+
     private WorkflowDefinitionService workflowDefinitionService() {
         return new WorkflowDefinitionService(
                 new WorkflowDefinitionRepository(),

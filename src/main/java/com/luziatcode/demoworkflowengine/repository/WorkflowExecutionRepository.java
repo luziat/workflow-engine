@@ -3,6 +3,7 @@ package com.luziatcode.demoworkflowengine.repository;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.WorkflowExecution;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,5 +19,9 @@ public class WorkflowExecutionRepository {
 
     public Optional<WorkflowExecution> findById(String executionId) {
         return Optional.ofNullable(store.get(executionId));
+    }
+
+    public List<WorkflowExecution> findAll() {
+        return List.copyOf(store.values());
     }
 }

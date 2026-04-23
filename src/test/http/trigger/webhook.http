@@ -1,0 +1,62 @@
+@baseUrl = http://localhost:8080
+@workflowId = webhook-trigger-workflow
+
+### 1. WEBHOOK 시작 workflow 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Webhook Trigger Workflow",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Webhook Start",
+      "type": "START",
+      "params": {},
+      "metadata": {
+        "triggerType": "WEBHOOK",
+        "webhookToken": "secret-123"
+      }
+    },
+    {
+      "id": "node_done",
+      "name": "Done",
+      "type": "END",
+      "params": {
+        "name": "Triggered from webhook"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. webhook 호출로 workflow 실행
+POST {{baseUrl}}/api/triggers/webhooks/{{workflowId}}?token=secret-123
+Content-Type: application/json
+
+{
+  "requestId": "webhook-001",
+  "payload": "hello webhook"
+}
+
+> {% client.global.set("webhookExecutionId", response.body.executionId); %}
+
+### 3. 실행 상태 조회
+GET {{baseUrl}}/api/executions/{{webhookExecutionId}}
+
+### 4. 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{webhookExecutionId}}/nodes

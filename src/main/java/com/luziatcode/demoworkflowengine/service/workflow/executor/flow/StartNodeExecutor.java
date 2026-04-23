@@ -23,5 +23,9 @@ public class StartNodeExecutor implements NodeExecutor {
     @Override
     public void execute(NodeExecutionContext context) {
         context.execution().getContext().put("started", true);
+        Object trigger = context.execution().getContext().get("trigger");
+        if (trigger instanceof java.util.Map<?, ?> triggerMap && triggerMap.get("type") != null) {
+            context.execution().getContext().put("startTriggerType", String.valueOf(triggerMap.get("type")));
+        }
     }
 }

@@ -6,8 +6,9 @@ import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.Node
 import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.NodeConnections;
 import com.luziatcode.demoworkflowengine.service.workflow.domain.definition.WorkflowDefinition;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutorRegistry;
+import com.luziatcode.demoworkflowengine.service.workflow.trigger.StartTriggerResolver;
 import com.luziatcode.demoworkflowengine.repository.WorkflowDefinitionRepository;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -15,10 +16,24 @@ import java.util.List;
 import java.util.Set;
 
 @Service
-@RequiredArgsConstructor
 public class WorkflowDefinitionService {
     private final WorkflowDefinitionRepository repository;
     private final NodeExecutorRegistry nodeExecutorRegistry;
+    private final StartTriggerResolver startTriggerResolver;
+
+    public WorkflowDefinitionService(WorkflowDefinitionRepository repository,
+                                     NodeExecutorRegistry nodeExecutorRegistry) {
+        this(repository, nodeExecutorRegistry, new StartTriggerResolver());
+    }
+
+    @Autowired
+    public WorkflowDefinitionService(WorkflowDefinitionRepository repository,
+                                     NodeExecutorRegistry nodeExecutorRegistry,
+                                     StartTriggerResolver startTriggerResolver) {
+        this.repository = repository;
+        this.nodeExecutorRegistry = nodeExecutorRegistry;
+        this.startTriggerResolver = startTriggerResolver;
+    }
 
     public WorkflowDefinition save(WorkflowDefinition definition) {
         if (definition.getVersion() <= 0) {
@@ -100,6 +115,11 @@ public class WorkflowDefinitionService {
         if (startCount != 1) {
             throw new IllegalArgumentException("Exactly one start node is required");
         }
+        Node startNode = definition.getNodes().stream()
+                .filter(node -> NodeType.START.equals(node.getType()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Exactly one start node is required"));
+        startTriggerResolver.validate(startNode);
         validateExistingWorkflowId(definition);
     }
 

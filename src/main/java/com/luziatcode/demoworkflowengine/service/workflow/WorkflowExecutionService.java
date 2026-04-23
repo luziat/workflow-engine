@@ -6,7 +6,9 @@ import com.luziatcode.demoworkflowengine.service.workflow.domain.execution.Workf
 import com.luziatcode.demoworkflowengine.repository.WorkflowExecutionRepository;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.WorkflowEngine;
 import com.luziatcode.demoworkflowengine.service.workflow.observation.ExecutionStateChangeSupport;
-import lombok.RequiredArgsConstructor;
+import com.luziatcode.demoworkflowengine.service.workflow.trigger.StartTriggerResolver;
+import com.luziatcode.demoworkflowengine.service.workflow.trigger.StartTriggerType;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.ZonedDateTime;
@@ -15,7 +17,6 @@ import java.util.Set;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class WorkflowExecutionService {
     private static final Set<ExecutionStatus> TERMINAL_STATUSES = Set.of(
             ExecutionStatus.SUCCESS,
@@ -28,6 +29,27 @@ public class WorkflowExecutionService {
     private final WorkflowDefinitionService workflowDefinitionService;
     private final WorkflowEngine workflowEngine;
     private final ExecutionStateChangeSupport executionStateChangeSupport;
+    private final StartTriggerResolver startTriggerResolver;
+
+    public WorkflowExecutionService(WorkflowExecutionRepository repository,
+                                    WorkflowDefinitionService workflowDefinitionService,
+                                    WorkflowEngine workflowEngine,
+                                    ExecutionStateChangeSupport executionStateChangeSupport) {
+        this(repository, workflowDefinitionService, workflowEngine, executionStateChangeSupport, new StartTriggerResolver());
+    }
+
+    @Autowired
+    public WorkflowExecutionService(WorkflowExecutionRepository repository,
+                                    WorkflowDefinitionService workflowDefinitionService,
+                                    WorkflowEngine workflowEngine,
+                                    ExecutionStateChangeSupport executionStateChangeSupport,
+                                    StartTriggerResolver startTriggerResolver) {
+        this.repository = repository;
+        this.workflowDefinitionService = workflowDefinitionService;
+        this.workflowEngine = workflowEngine;
+        this.executionStateChangeSupport = executionStateChangeSupport;
+        this.startTriggerResolver = startTriggerResolver;
+    }
 
     /**
      * workflow id/version, input var 저장.
@@ -54,6 +76,10 @@ public class WorkflowExecutionService {
 
     public WorkflowExecution start(String workflowId, Map<String, Object> input) {
         WorkflowDefinition definition = workflowDefinitionService.getLatest(workflowId);
+        return start(definition, startTriggerResolver.buildTriggerContext(definition, StartTriggerType.MANUAL, input));
+    }
+
+    public WorkflowExecution start(WorkflowDefinition definition, Map<String, Object> input) {
         WorkflowExecution execution = create(definition, input);
         return workflowEngine.runAsync(execution);
     }
