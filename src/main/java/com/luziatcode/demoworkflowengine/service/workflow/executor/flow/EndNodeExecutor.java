@@ -1,4 +1,4 @@
-package com.luziatcode.demoworkflowengine.service.workflow.executor.task;
+package com.luziatcode.demoworkflowengine.service.workflow.executor.flow;
 
 import com.luziatcode.demoworkflowengine.service.workflow.domain.common.NodeType;
 import com.luziatcode.demoworkflowengine.service.workflow.engine.NodeExecutionContext;

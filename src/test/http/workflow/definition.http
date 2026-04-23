@@ -1,0 +1,157 @@
+@baseUrl = http://localhost:8080
+@workflowId = workflow-definition-test
+@otherWorkflowId = workflow-definition-other
+
+### 1. workflow-definition 테스트용 v1 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Workflow Definition Test V1",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_end",
+      "name": "Done V1",
+      "type": "END",
+      "params": {
+        "name": "Definition v1"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_end",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. workflow-definition 테스트용 v2 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "Workflow Definition Test V2",
+  "version": 2,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_note",
+      "name": "Note",
+      "type": "NOTE",
+      "params": {
+        "message": "Definition v2"
+      }
+    },
+    {
+      "id": "node_end",
+      "name": "Done V2",
+      "type": "END",
+      "params": {
+        "name": "Definition v2"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_note": {
+      "main": [
+        [
+          {
+            "nodeId": "node_end",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 3. 다른 workflow 최신 버전 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{otherWorkflowId}}",
+  "name": "Workflow Definition Other",
+  "version": 3,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_end",
+      "name": "Other End",
+      "type": "END",
+      "params": {
+        "name": "Other latest"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_end",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 4. 특정 workflow의 최신 버전 조회
+GET {{baseUrl}}/api/workflows/{{workflowId}}
+
+### 5. 특정 workflow의 모든 버전 조회
+GET {{baseUrl}}/api/workflows/{{workflowId}}/versions
+
+### 6. 특정 workflow의 지정 버전 조회
+GET {{baseUrl}}/api/workflows/{{workflowId}}/versions/1
+
+### 7. 모든 workflow의 최신 버전 목록 조회
+GET {{baseUrl}}/api/workflows
+
+### 8. 특정 workflow의 지정 버전 삭제
+DELETE {{baseUrl}}/api/workflows/{{workflowId}}/versions/1
+
+### 9. 특정 workflow 전체 삭제
+DELETE {{baseUrl}}/api/workflows/{{otherWorkflowId}}

@@ -26,14 +26,22 @@ import com.luziatcode.demoworkflowengine.service.workflow.observation.ExecutionO
 import com.luziatcode.demoworkflowengine.service.workflow.observation.ExecutionStateChangeSupport;
 import com.luziatcode.demoworkflowengine.service.workflow.observation.NodeExecutionListener;
 import com.luziatcode.demoworkflowengine.service.workflow.observation.WorkflowExecutionListener;
-import com.luziatcode.demoworkflowengine.service.workflow.executor.task.EndNodeExecutor;
+import com.luziatcode.demoworkflowengine.service.workflow.executor.flow.EndNodeExecutor;
 import com.luziatcode.demoworkflowengine.service.workflow.executor.task.TimerNodeExecutor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.SyncTaskExecutor;
 
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.net.URI;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -190,84 +198,87 @@ class WorkflowEngineTest {
 
     @Test
     @DisplayName("03.병렬과 머지 - 병렬 분기와 머지 연결을 포함한 connections를 처리한다")
-    void runSupportsN8nConnectionsWithParallelBranchesAndMerge() {
-        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
-        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor(), new MergeNodeExecutor()));
-        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
-                workflowExecutionRepository,
-                nodeExecutionRepository,
-                List.of(),
-                List.of(),
-                new SyncTaskExecutor()
-        );
-        WorkflowEngine engine = workflowEngine(
-                nodeExecutorRegistry,
-                workflowExecutionRepository,
-                stateChangeSupport,
-                new SyncTaskExecutor()
-        );
-        WorkflowExecutionService executionService = workflowExecutionService(
-                workflowExecutionRepository,
-                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
-                engine,
-                stateChangeSupport
-        );
-        WorkflowDefinition definition = definition("""
-                {
-                  "id": "branching-workflow",
-                  "version": 3,
-                  "nodes": [
-                    { "id": "node_start", "name": "When clicking Execute workflow", "type": "START", "params": {} },
-                    { "id": "node_http_request_a", "name": "HTTP Request", "type": "HTTP", "params": { "url": "http://a.example" } },
-                    { "id": "node_http_request_b", "name": "HTTP Request 2", "type": "HTTP", "params": { "url": "http://b.example" } },
-                    { "id": "node_http_request_c", "name": "HTTP Request 3", "type": "HTTP", "params": { "url": "http://c.example" } },
-                    { "id": "node_merge", "name": "Merge", "type": "MERGE", "params": {} }
-                  ],
-                  "connections": {
-                    "node_start": {
-                      "main": [
-                        [
-                          { "nodeId": "node_http_request_a", "type": "main", "index": 0 }
-                        ]
-                      ]
-                    },
-                    "node_http_request_a": {
-                      "main": [
-                        [
-                          { "nodeId": "node_http_request_b", "type": "main", "index": 0 },
-                          { "nodeId": "node_http_request_c", "type": "main", "index": 0 }
-                        ]
-                      ]
-                    },
-                    "node_http_request_b": {
-                      "main": [
-                        [
-                          { "nodeId": "node_merge", "type": "main", "index": 0 }
-                        ]
-                      ]
-                    },
-                    "node_http_request_c": {
-                      "main": [
-                        [
-                          { "nodeId": "node_merge", "type": "main", "index": 1 }
-                        ]
-                      ]
+    void runSupportsN8nConnectionsWithParallelBranchesAndMerge() throws Exception {
+        try (TestHttpServer server = startHttpServer(exchange ->
+                writeJson(exchange, 200, Map.of("path", exchange.getRequestURI().getPath())))) {
+            WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+            NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+            NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(new StartNodeExecutor(), new HttpNodeExecutor(), new MergeNodeExecutor()));
+            ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                    workflowExecutionRepository,
+                    nodeExecutionRepository,
+                    List.of(),
+                    List.of(),
+                    new SyncTaskExecutor()
+            );
+            WorkflowEngine engine = workflowEngine(
+                    nodeExecutorRegistry,
+                    workflowExecutionRepository,
+                    stateChangeSupport,
+                    new SyncTaskExecutor()
+            );
+            WorkflowExecutionService executionService = workflowExecutionService(
+                    workflowExecutionRepository,
+                    new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                    engine,
+                    stateChangeSupport
+            );
+            WorkflowDefinition definition = definition("""
+                    {
+                      "id": "branching-workflow",
+                      "version": 3,
+                      "nodes": [
+                        { "id": "node_start", "name": "When clicking Execute workflow", "type": "START", "params": {} },
+                        { "id": "node_http_request_a", "name": "HTTP Request", "type": "HTTP", "params": { "url": "<<baseUrl>>/a" } },
+                        { "id": "node_http_request_b", "name": "HTTP Request 2", "type": "HTTP", "params": { "url": "<<baseUrl>>/b" } },
+                        { "id": "node_http_request_c", "name": "HTTP Request 3", "type": "HTTP", "params": { "url": "<<baseUrl>>/c" } },
+                        { "id": "node_merge", "name": "Merge", "type": "MERGE", "params": {} }
+                      ],
+                      "connections": {
+                        "node_start": {
+                          "main": [
+                            [
+                              { "nodeId": "node_http_request_a", "type": "main", "index": 0 }
+                            ]
+                          ]
+                        },
+                        "node_http_request_a": {
+                          "main": [
+                            [
+                              { "nodeId": "node_http_request_b", "type": "main", "index": 0 },
+                              { "nodeId": "node_http_request_c", "type": "main", "index": 0 }
+                            ]
+                          ]
+                        },
+                        "node_http_request_b": {
+                          "main": [
+                            [
+                              { "nodeId": "node_merge", "type": "main", "index": 0 }
+                            ]
+                          ]
+                        },
+                        "node_http_request_c": {
+                          "main": [
+                            [
+                              { "nodeId": "node_merge", "type": "main", "index": 1 }
+                            ]
+                          ]
+                        }
+                      }
                     }
-                  }
-                }
-                """);
-        WorkflowExecution execution = executionService.create(definition, Map.of());
+                    """);
+            WorkflowExecution execution = executionService.create(definition, Map.of("baseUrl", server.baseUrl()));
 
-        WorkflowExecution result = engine.run(execution);
+            WorkflowExecution result = engine.run(execution);
 
-        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
-        assertEquals("http://c.example", result.getContext().get("lastHttpUrl"));
-        assertEquals(200, result.getContext().get("httpStatus"));
-        List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(execution.getExecutionId());
-        assertEquals(5, nodeExecutions.size());
-        assertEquals("node_merge", nodeExecutions.get(4).getNodeId());
-        assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(4).getStatus());
+            assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+            assertEquals(server.url("/c"), result.getContext().get("lastHttpUrl"));
+            assertEquals(200, result.getContext().get("httpStatus"));
+            List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(execution.getExecutionId());
+            assertEquals(5, nodeExecutions.size());
+            assertEquals("node_merge", nodeExecutions.get(4).getNodeId());
+            assertEquals(ExecutionStatus.SUCCESS, nodeExecutions.get(4).getStatus());
+        }
     }
 
     @Test
@@ -575,88 +586,92 @@ class WorkflowEngineTest {
 
     @Test
     @DisplayName("08.변수 치환 - params 전체에서 context 값을 찾아 치환한다")
-    void resolvesTemplateVariablesAcrossNodeParams() {
-        WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
-        NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
-        NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
-                new StartNodeExecutor(),
-                new HttpNodeExecutor(),
-                new TimerNodeExecutor(),
-                new SwitchNodeExecutor(),
-                new EndNodeExecutor()
-        ));
-        ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
-                workflowExecutionRepository,
-                nodeExecutionRepository,
-                List.of(),
-                List.of(),
-                new SyncTaskExecutor()
-        );
-        WorkflowEngine engine = workflowEngine(
-                nodeExecutorRegistry,
-                workflowExecutionRepository,
-                stateChangeSupport,
-                new SyncTaskExecutor()
-        );
-        WorkflowExecutionService executionService = workflowExecutionService(
-                workflowExecutionRepository,
-                new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
-                engine,
-                stateChangeSupport
-        );
-        WorkflowDefinition definition = definition("""
-                {
-                  "id": "template-workflow",
-                  "version": 1,
-                  "nodes": [
-                    { "id": "node_start", "name": "Start", "type": "START", "params": {} },
-                    { "id": "node_wait", "name": "Wait", "type": "TIMER", "params": { "waitMillis": "<<delayMillis>>" } },
-                    { "id": "node_http", "name": "HTTP", "type": "HTTP", "params": { "url": "https://api.example.com/<<request.id>>/tenants/<<tenantId>>" } },
-                    { "id": "node_switch", "name": "Switch", "type": "SWITCH", "params": {
-                      "conditions": {
-                        "conditions": [
-                          {
-                            "leftValue": "<<threshold.current>>",
-                            "rightValue": "<<threshold.minimum>>",
-                            "operator": { "operation": "greaterThan" }
+    void resolvesTemplateVariablesAcrossNodeParams() throws Exception {
+        try (TestHttpServer server = startHttpServer(exchange ->
+                writeJson(exchange, 200, Map.of("path", exchange.getRequestURI().getPath())))) {
+            WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+            NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+            NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                    new StartNodeExecutor(),
+                    new HttpNodeExecutor(),
+                    new TimerNodeExecutor(),
+                    new SwitchNodeExecutor(),
+                    new EndNodeExecutor()
+            ));
+            ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                    workflowExecutionRepository,
+                    nodeExecutionRepository,
+                    List.of(),
+                    List.of(),
+                    new SyncTaskExecutor()
+            );
+            WorkflowEngine engine = workflowEngine(
+                    nodeExecutorRegistry,
+                    workflowExecutionRepository,
+                    stateChangeSupport,
+                    new SyncTaskExecutor()
+            );
+            WorkflowExecutionService executionService = workflowExecutionService(
+                    workflowExecutionRepository,
+                    new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                    engine,
+                    stateChangeSupport
+            );
+            WorkflowDefinition definition = definition("""
+                    {
+                      "id": "template-workflow",
+                      "version": 1,
+                      "nodes": [
+                        { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                        { "id": "node_wait", "name": "Wait", "type": "TIMER", "params": { "waitMillis": "<<delayMillis>>" } },
+                        { "id": "node_http", "name": "HTTP", "type": "HTTP", "params": { "url": "<<baseUrl>>/<<request.id>>/tenants/<<tenantId>>" } },
+                        { "id": "node_switch", "name": "Switch", "type": "SWITCH", "params": {
+                          "conditions": {
+                            "conditions": [
+                              {
+                                "leftValue": "<<threshold.current>>",
+                                "rightValue": "<<threshold.minimum>>",
+                                "operator": { "operation": "greaterThan" }
+                              }
+                            ]
                           }
-                        ]
+                        } },
+                        { "id": "node_done", "name": "", "type": "END", "params": { "name": "Task <<request.id>>" } },
+                        { "id": "node_fallback", "name": "Fallback", "type": "END", "params": {} }
+                      ],
+                      "connections": {
+                        "node_start": {
+                          "main": [[{ "nodeId": "node_wait", "type": "main", "index": 0 }]]
+                        },
+                        "node_wait": {
+                          "main": [[{ "nodeId": "node_http", "type": "main", "index": 0 }]]
+                        },
+                        "node_http": {
+                          "main": [[{ "nodeId": "node_switch", "type": "main", "index": 0 }]]
+                        },
+                        "node_switch": {
+                          "main": [
+                            [{ "nodeId": "node_done", "type": "main", "index": 0 }],
+                            [{ "nodeId": "node_fallback", "type": "main", "index": 0 }]
+                          ]
+                        }
                       }
-                    } },
-                    { "id": "node_done", "name": "", "type": "END", "params": { "name": "Task <<request.id>>" } },
-                    { "id": "node_fallback", "name": "Fallback", "type": "END", "params": {} }
-                  ],
-                  "connections": {
-                    "node_start": {
-                      "main": [[{ "nodeId": "node_wait", "type": "main", "index": 0 }]]
-                    },
-                    "node_wait": {
-                      "main": [[{ "nodeId": "node_http", "type": "main", "index": 0 }]]
-                    },
-                    "node_http": {
-                      "main": [[{ "nodeId": "node_switch", "type": "main", "index": 0 }]]
-                    },
-                    "node_switch": {
-                      "main": [
-                        [{ "nodeId": "node_done", "type": "main", "index": 0 }],
-                        [{ "nodeId": "node_fallback", "type": "main", "index": 0 }]
-                      ]
                     }
-                  }
-                }
-                """);
+                    """);
 
-        WorkflowExecution result = engine.run(executionService.create(definition, Map.of(
-                "delayMillis", "0",
-                "tenantId", "tenant-1",
-                "request", Map.of("id", "req-42"),
-                "threshold", Map.of("current", "10", "minimum", 5)
-        )));
+            WorkflowExecution result = engine.run(executionService.create(definition, Map.of(
+                    "baseUrl", server.baseUrl(),
+                    "delayMillis", "0",
+                    "tenantId", "tenant-1",
+                    "request", Map.of("id", "req-42"),
+                    "threshold", Map.of("current", "10", "minimum", 5)
+            )));
 
-        assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
-        assertEquals("https://api.example.com/req-42/tenants/tenant-1", result.getContext().get("lastHttpUrl"));
-        assertEquals("Task req-42", result.getContext().get("lastTask"));
-        assertEquals("node_done", result.getContext().get("handledBy"));
+            assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+            assertEquals(server.url("/req-42/tenants/tenant-1"), result.getContext().get("lastHttpUrl"));
+            assertEquals("Task req-42", result.getContext().get("lastTask"));
+            assertEquals("node_done", result.getContext().get("handledBy"));
+        }
     }
 
     @Test
@@ -712,7 +727,170 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("10.AI 노드 실행 - messages 템플릿을 해석하고 mock 응답을 context에 기록한다")
+    @DisplayName("10.HTTP 노드 실행 - method, queryParams, headers, body를 전송하고 구조화된 응답을 context에 기록한다")
+    void httpExecutorSendsRequestAndStoresStructuredResponse() throws Exception {
+        try (TestHttpServer server = startHttpServer(exchange -> {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("method", exchange.getRequestMethod());
+            response.put("path", exchange.getRequestURI().getPath());
+            response.put("query", exchange.getRequestURI().getQuery());
+            response.put("tenantHeader", exchange.getRequestHeaders().getFirst("X-Tenant-Id"));
+            response.put("contentType", exchange.getRequestHeaders().getFirst("Content-Type"));
+            response.put("body", requestBody(exchange));
+            writeJson(exchange, 200, response);
+        })) {
+            WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+            NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+            NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                    new StartNodeExecutor(),
+                    new HttpNodeExecutor(),
+                    new EndNodeExecutor()
+            ));
+            ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                    workflowExecutionRepository,
+                    nodeExecutionRepository,
+                    List.of(),
+                    List.of(),
+                    new SyncTaskExecutor()
+            );
+            WorkflowEngine engine = workflowEngine(
+                    nodeExecutorRegistry,
+                    workflowExecutionRepository,
+                    stateChangeSupport,
+                    new SyncTaskExecutor()
+            );
+            WorkflowExecutionService executionService = workflowExecutionService(
+                    workflowExecutionRepository,
+                    new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                    engine,
+                    stateChangeSupport
+            );
+            WorkflowDefinition definition = definition("""
+                    {
+                      "id": "http-request-workflow",
+                      "version": 1,
+                      "nodes": [
+                        { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                        { "id": "node_http", "name": "HTTP", "type": "HTTP", "params": {
+                          "method": "POST",
+                          "url": "<<baseUrl>>/orders/<<order.id>>",
+                          "headers": {
+                            "X-Tenant-Id": "<<tenantId>>"
+                          },
+                          "queryParams": {
+                            "include": "details",
+                            "requestId": "<<requestId>>"
+                          },
+                          "body": {
+                            "status": "<<order.status>>"
+                          },
+                          "timeoutMillis": 3000
+                        } },
+                        { "id": "node_end", "name": "Done", "type": "END", "params": {} }
+                      ],
+                      "connections": {
+                        "node_start": {
+                          "main": [[{ "nodeId": "node_http", "type": "main", "index": 0 }]]
+                        },
+                        "node_http": {
+                          "main": [[{ "nodeId": "node_end", "type": "main", "index": 0 }]]
+                        }
+                      }
+                    }
+                    """);
+
+            WorkflowExecution result = engine.run(executionService.create(definition, Map.of(
+                    "baseUrl", server.baseUrl(),
+                    "order", Map.of("id", "ord-1", "status", "PAID"),
+                    "tenantId", "tenant-1",
+                    "requestId", "req-9"
+            )));
+
+            assertEquals(ExecutionStatus.SUCCESS, result.getStatus());
+            assertEquals(server.url("/orders/ord-1?include=details&requestId=req-9"), result.getContext().get("lastHttpUrl"));
+            assertEquals(200, result.getContext().get("httpStatus"));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) result.getContext().get("httpBody");
+            assertEquals("POST", body.get("method"));
+            assertEquals("/orders/ord-1", body.get("path"));
+            assertEquals("include=details&requestId=req-9", body.get("query"));
+            assertEquals("tenant-1", body.get("tenantHeader"));
+            assertTrue(String.valueOf(body.get("contentType")).contains("application/json"));
+            assertEquals("{\"status\":\"PAID\"}", body.get("body"));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> httpOutputs = (Map<String, Object>) result.getContext().get("httpOutputs");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> nodeOutput = (Map<String, Object>) httpOutputs.get("node_http");
+            assertEquals("POST", nodeOutput.get("method"));
+            assertEquals(server.url("/orders/ord-1?include=details&requestId=req-9"), nodeOutput.get("url"));
+            assertEquals(200, nodeOutput.get("status"));
+        }
+    }
+
+    @Test
+    @DisplayName("11.HTTP 실패 전파 - non-2xx 응답이면 노드와 워크플로우를 FAILED로 만든다")
+    void httpExecutorFailsWorkflowOnNon2xxResponse() throws Exception {
+        try (TestHttpServer server = startHttpServer(exchange ->
+                writeJson(exchange, 503, Map.of("error", "downstream unavailable")))) {
+            WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
+            NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
+            NodeExecutorRegistry nodeExecutorRegistry = new NodeExecutorRegistry(List.of(
+                    new StartNodeExecutor(),
+                    new HttpNodeExecutor()
+            ));
+            ExecutionStateChangeSupport stateChangeSupport = stateChangeSupport(
+                    workflowExecutionRepository,
+                    nodeExecutionRepository,
+                    List.of(),
+                    List.of(),
+                    new SyncTaskExecutor()
+            );
+            WorkflowEngine engine = workflowEngine(
+                    nodeExecutorRegistry,
+                    workflowExecutionRepository,
+                    stateChangeSupport,
+                    new SyncTaskExecutor()
+            );
+            WorkflowExecutionService executionService = workflowExecutionService(
+                    workflowExecutionRepository,
+                    new WorkflowDefinitionService(new WorkflowDefinitionRepository(), nodeExecutorRegistry),
+                    engine,
+                    stateChangeSupport
+            );
+            WorkflowDefinition definition = definition("""
+                    {
+                      "id": "http-failure-workflow",
+                      "version": 1,
+                      "nodes": [
+                        { "id": "node_start", "name": "Start", "type": "START", "params": {} },
+                        { "id": "node_http", "name": "HTTP", "type": "HTTP", "params": { "url": "<<baseUrl>>/unavailable" } }
+                      ],
+                      "connections": {
+                        "node_start": {
+                          "main": [[{ "nodeId": "node_http", "type": "main", "index": 0 }]]
+                        }
+                      }
+                    }
+                    """);
+
+            WorkflowExecution result = engine.run(executionService.create(definition, Map.of("baseUrl", server.baseUrl())));
+
+            assertEquals(ExecutionStatus.FAILED, result.getStatus());
+            assertEquals("HTTP request returned status 503: GET " + server.url("/unavailable"), result.getFailureMessage());
+            assertEquals(server.url("/unavailable"), result.getContext().get("lastHttpUrl"));
+            assertEquals(503, result.getContext().get("httpStatus"));
+
+            List<NodeExecution> nodeExecutions = nodeExecutionRepository.findByExecutionId(result.getExecutionId());
+            assertEquals(2, nodeExecutions.size());
+            assertEquals(ExecutionStatus.FAILED, nodeExecutions.get(1).getStatus());
+            assertEquals("HTTP request returned status 503: GET " + server.url("/unavailable"), nodeExecutions.get(1).getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("12.AI 노드 실행 - messages 템플릿을 해석하고 mock 응답을 context에 기록한다")
     void aiExecutorResolvesMessagesAndStoresMockResponse() {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -799,7 +977,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("11.AI 멀티모달과 병렬 머지 - 노드별 결과를 aiOutputs에 분리해 저장한다")
+    @DisplayName("13.AI 멀티모달과 병렬 머지 - 노드별 결과를 aiOutputs에 분리해 저장한다")
     void aiExecutorStoresParallelOutputsByNodeId() {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -922,7 +1100,7 @@ class WorkflowEngineTest {
     }
 
     @Test
-    @DisplayName("12.AI 노드 입력 오류 - 잘못된 messages는 노드와 워크플로우를 FAILED로 만든다")
+    @DisplayName("14.AI 노드 입력 오류 - 잘못된 messages는 노드와 워크플로우를 FAILED로 만든다")
     void aiExecutorFailsWhenMessagesAreInvalid() {
         WorkflowExecutionRepository workflowExecutionRepository = new WorkflowExecutionRepository();
         NodeExecutionRepository nodeExecutionRepository = new NodeExecutionRepository();
@@ -1188,6 +1366,32 @@ class WorkflowEngineTest {
         assertEquals("manual stop", nodeExecutions.get(1).getMessage());
     }
 
+    private TestHttpServer startHttpServer(HttpHandler handler) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/", exchange -> {
+            try {
+                handler.handle(exchange);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        return new TestHttpServer(server);
+    }
+
+    private void writeJson(HttpExchange exchange, int status, Object body) throws IOException {
+        byte[] response = objectMapper.writeValueAsBytes(body);
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, response.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(response);
+        }
+    }
+
+    private String requestBody(HttpExchange exchange) throws IOException {
+        return new String(exchange.getRequestBody().readAllBytes());
+    }
+
     private WorkflowExecutionService workflowExecutionService(WorkflowExecutionRepository repository,
                                                               WorkflowDefinitionService definitionService,
                                                               WorkflowEngine engine,
@@ -1250,6 +1454,33 @@ class WorkflowEngineTest {
             Thread.sleep(10L);
         }
         throw new AssertionError("Timed out waiting for current node " + nodeId);
+    }
+
+    @FunctionalInterface
+    private interface HttpHandler {
+        void handle(HttpExchange exchange) throws IOException;
+    }
+
+    private static final class TestHttpServer implements AutoCloseable {
+        private final HttpServer server;
+
+        private TestHttpServer(HttpServer server) {
+            this.server = server;
+        }
+
+        private String baseUrl() {
+            return "http://localhost:" + server.getAddress().getPort();
+        }
+
+        private String url(String pathAndQuery) {
+            URI uri = URI.create(baseUrl() + pathAndQuery);
+            return uri.toString();
+        }
+
+        @Override
+        public void close() {
+            server.stop(0);
+        }
     }
 
     private static final class RecordingWorkflowExecutionListener implements WorkflowExecutionListener {

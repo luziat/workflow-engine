@@ -1,0 +1,93 @@
+@baseUrl = http://localhost:8080
+@workflowId = task-http-workflow
+
+### 1. HTTP 노드 워크플로우 저장
+POST {{baseUrl}}/api/workflows
+Content-Type: application/json
+
+{
+  "id": "{{workflowId}}",
+  "name": "HTTP Node Runtime Test",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node_start",
+      "name": "Start",
+      "type": "START",
+      "params": {}
+    },
+    {
+      "id": "node_http",
+      "name": "HTTP Request",
+      "type": "HTTP",
+      "params": {
+        "method": "POST",
+        "url": "https://httpbin.org/anything/orders/<<order.id>>",
+        "headers": {
+          "X-Tenant-Id": "<<tenantId>>"
+        },
+        "queryParams": {
+          "include": "details",
+          "requestId": "<<requestId>>"
+        },
+        "body": {
+          "status": "<<order.status>>"
+        },
+        "timeoutMillis": 3000
+      }
+    },
+    {
+      "id": "node_done",
+      "name": "Done",
+      "type": "END",
+      "params": {
+        "name": "HTTP flow completed"
+      }
+    }
+  ],
+  "connections": {
+    "node_start": {
+      "main": [
+        [
+          {
+            "nodeId": "node_http",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "node_http": {
+      "main": [
+        [
+          {
+            "nodeId": "node_done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+### 2. 워크플로우 실행
+POST {{baseUrl}}/api/executions/{{workflowId}}/start
+Content-Type: application/json
+
+{
+  "tenantId": "tenant-1",
+  "requestId": "req-9",
+  "order": {
+    "id": "ord-1",
+    "status": "PAID"
+  }
+}
+
+> {% client.global.set("httpExecutionId", response.body.executionId); %}
+
+### 3. 실행 상태 조회
+GET {{baseUrl}}/api/executions/{{httpExecutionId}}
+
+### 4. 노드 실행 이력 조회
+GET {{baseUrl}}/api/executions/{{httpExecutionId}}/nodes

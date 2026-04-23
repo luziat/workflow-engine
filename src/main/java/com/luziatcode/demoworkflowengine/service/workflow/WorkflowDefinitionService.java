@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -35,6 +36,30 @@ public class WorkflowDefinitionService {
     public WorkflowDefinition getRequired(String workflowId, int version) {
         return repository.findByIdAndVersion(workflowId, version)
                 .orElseThrow(() -> new IllegalArgumentException("Workflow not found: " + workflowId + " version " + version));
+    }
+
+    public List<WorkflowDefinition> getAllVersions(String workflowId) {
+        List<WorkflowDefinition> definitions = repository.findAllById(workflowId);
+        if (definitions.isEmpty()) {
+            throw new IllegalArgumentException("Workflow not found: " + workflowId);
+        }
+        return definitions;
+    }
+
+    public List<WorkflowDefinition> getAllLatest() {
+        return repository.findAllLatest();
+    }
+
+    public void delete(String workflowId) {
+        if (!repository.deleteAllById(workflowId)) {
+            throw new IllegalArgumentException("Workflow not found: " + workflowId);
+        }
+    }
+
+    public void delete(String workflowId, int version) {
+        if (!repository.deleteByIdAndVersion(workflowId, version)) {
+            throw new IllegalArgumentException("Workflow not found: " + workflowId + " version " + version);
+        }
     }
 
     private void validate(WorkflowDefinition definition) {
@@ -75,6 +100,21 @@ public class WorkflowDefinitionService {
         if (startCount != 1) {
             throw new IllegalArgumentException("Exactly one start node is required");
         }
+        validateExistingWorkflowId(definition);
+    }
+
+    private void validateExistingWorkflowId(WorkflowDefinition definition) {
+        repository.findLatestById(definition.getId())
+                .ifPresent(latest -> {
+                    if (definition.getVersion() <= latest.getVersion()) {
+                        throw new IllegalArgumentException(
+                                "Workflow version must be greater than latest version "
+                                        + latest.getVersion()
+                                        + " for workflow "
+                                        + definition.getId()
+                        );
+                    }
+                });
     }
 
     private void validateConnections(Set<String> nodeIds, NodeConnections connections) {
